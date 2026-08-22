@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { RichContent } from '@/components/rich-content'
 import { Skeleton } from '@/components/ui/skeleton'
+import { getDerivativeSourceUrl } from '@/lib/build-metadata'
 import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
 
 import { getAboutContent } from './api'
@@ -56,6 +57,19 @@ function EmptyAboutState() {
             >
               {t('https://github.com/QuantumNous/new-api')}
             </a>
+          </p>
+          <p>
+            <a
+              href={getDerivativeSourceUrl()}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='text-primary hover:underline'
+            >
+              {t('Source Code')}
+            </a>
+          </p>
+          <p className='text-muted-foreground'>
+            {t('Frontend design and development by New API contributors.')}
           </p>
           <p className='text-muted-foreground'>
             <a

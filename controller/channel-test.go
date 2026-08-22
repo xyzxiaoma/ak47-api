@@ -26,6 +26,7 @@ import (
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
@@ -51,6 +52,12 @@ func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointTyp
 		return string(constant.EndpointTypeOpenAIResponseCompact)
 	}
 	if channel != nil && channel.Type == constant.ChannelTypeCodex {
+		return string(constant.EndpointTypeOpenAIResponse)
+	}
+	if channel != nil &&
+		!model_setting.GetGlobalSettings().PassThroughRequestEnabled &&
+		!channel.GetSetting().PassThroughBodyEnabled &&
+		service.ShouldChatCompletionsUseResponsesGlobal(channel.Id, channel.Type, modelName) {
 		return string(constant.EndpointTypeOpenAIResponse)
 	}
 	return normalized

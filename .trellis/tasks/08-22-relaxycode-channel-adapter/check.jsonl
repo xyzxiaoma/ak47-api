@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/index.md","reason":"Backend spec index for the channel-test controller change."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Backend quality and regression-test review guidance."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer review for build metadata flowing from Docker into shared UI surfaces."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse review for the existing compatibility policy and shared build-metadata accessor."}

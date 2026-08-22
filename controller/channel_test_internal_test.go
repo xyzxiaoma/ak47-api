@@ -14,12 +14,101 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeChannelTestEndpoint(t *testing.T) {
+	globalSettings := model_setting.GetGlobalSettings()
+	originalSettings := *globalSettings
+	t.Cleanup(func() {
+		*globalSettings = originalSettings
+	})
+
+	globalSettings.PassThroughRequestEnabled = false
+	globalSettings.ChatCompletionsToResponsesPolicy = model_setting.ChatCompletionsToResponsesPolicy{
+		Enabled:       true,
+		ChannelIDs:    []int{42},
+		ModelPatterns: []string{`^responses-model$`},
+	}
+
+	channelWithPassThrough := &model.Channel{
+		Id:   42,
+		Type: constant.ChannelTypeOpenAI,
+	}
+	channelWithPassThrough.SetSetting(dto.ChannelSettings{PassThroughBodyEnabled: true})
+
+	tests := []struct {
+		name         string
+		channel      *model.Channel
+		model        string
+		endpointType string
+		globalPass   bool
+		want         string
+	}{
+		{
+			name:    "matching policy selects responses",
+			channel: &model.Channel{Id: 42, Type: constant.ChannelTypeOpenAI},
+			model:   "responses-model",
+			want:    string(constant.EndpointTypeOpenAIResponse),
+		},
+		{
+			name:         "explicit chat completions remains explicit",
+			channel:      &model.Channel{Id: 42, Type: constant.ChannelTypeOpenAI},
+			model:        "responses-model",
+			endpointType: string(constant.EndpointTypeOpenAI),
+			want:         string(constant.EndpointTypeOpenAI),
+		},
+		{
+			name:    "unmatched model stays automatic",
+			channel: &model.Channel{Id: 42, Type: constant.ChannelTypeOpenAI},
+			model:   "chat-model",
+		},
+		{
+			name:    "unmatched channel stays automatic",
+			channel: &model.Channel{Id: 7, Type: constant.ChannelTypeOpenAI},
+			model:   "responses-model",
+		},
+		{
+			name:       "global pass through blocks policy conversion",
+			channel:    &model.Channel{Id: 42, Type: constant.ChannelTypeOpenAI},
+			model:      "responses-model",
+			globalPass: true,
+		},
+		{
+			name:    "channel pass through blocks policy conversion",
+			channel: channelWithPassThrough,
+			model:   "responses-model",
+		},
+		{
+			name:    "responses compact keeps precedence",
+			channel: channelWithPassThrough,
+			model:   ratio_setting.WithCompactModelSuffix("responses-model"),
+			want:    string(constant.EndpointTypeOpenAIResponseCompact),
+		},
+		{
+			name:    "codex channel keeps precedence",
+			channel: &model.Channel{Id: 7, Type: constant.ChannelTypeCodex},
+			model:   "chat-model",
+			want:    string(constant.EndpointTypeOpenAIResponse),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			globalSettings.PassThroughRequestEnabled = test.globalPass
+
+			got := normalizeChannelTestEndpoint(test.channel, test.model, test.endpointType)
+
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
 
 func TestValidateChannelProxy(t *testing.T) {
 	tests := []struct {

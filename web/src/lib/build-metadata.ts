@@ -47,6 +47,7 @@ const BUILD_CHANNEL_TAG = '2k6e8r7p'
 
 const BUILD_REV_PREFIX = 'rv'
 const LS_REVISION_KEY = 'app:rev'
+const DERIVATIVE_SOURCE_FALLBACK = 'https://github.com/xyzxiaoma/ak47-api'
 
 interface BuildDescriptor {
   readonly rev: string
@@ -60,13 +61,13 @@ declare global {
   }
 }
 
-function readEnvRevision(): string | undefined {
+function readPublicEnv(name: string): string | undefined {
   try {
     const env = (
       import.meta as unknown as { env?: Record<string, string | undefined> }
     ).env
-    const raw = env?.VITE_REACT_APP_VERSION
-    if (typeof raw === 'string' && raw.length > 0) return raw
+    const raw = env?.[name]
+    if (typeof raw === 'string' && raw.trim().length > 0) return raw.trim()
   } catch {
     // import.meta may be unavailable in some test environments.
   }
@@ -74,9 +75,30 @@ function readEnvRevision(): string | undefined {
 }
 
 function computeBuildRevision(): string {
-  const envRev = readEnvRevision()
+  const envRev = readPublicEnv('VITE_REACT_APP_VERSION')
   const head = envRev && envRev.length > 0 ? envRev : '0000'
   return `${BUILD_REV_PREFIX}.${head}.${BUILD_CHANNEL_TAG}`
+}
+
+/**
+ * Return the public corresponding-source URL baked into this frontend build.
+ * Only absolute HTTP(S) URLs are accepted so footer links cannot inherit an
+ * invalid or unsafe build-time value.
+ */
+export function getDerivativeSourceUrl(): string {
+  const configured = readPublicEnv('VITE_DERIVATIVE_SOURCE_URL')
+  if (!configured) return DERIVATIVE_SOURCE_FALLBACK
+
+  try {
+    const parsed = new URL(configured)
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+      return parsed.toString()
+    }
+  } catch {
+    // Fall through to the public derivative repository.
+  }
+
+  return DERIVATIVE_SOURCE_FALLBACK
 }
 
 let installed = false

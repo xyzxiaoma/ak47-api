@@ -51,6 +51,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'Discord',
   'DoubaoVideo',
   'FastGPT',
+  'Frontend design and development by New API contributors.',
   'Gemini',
   'Gemini Image 4K',
   'GitHub',
