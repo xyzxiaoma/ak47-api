@@ -27,3 +27,25 @@ Adapted automatic channel tests to Chat Completions-to-Responses policy with pas
 ### Status
 
 [OK] **Completed**
+
+
+## Session 2: 前端控制室视觉重设计并部署
+
+**Date**: 2026-08-22
+**Task**: 前端控制室视觉重设计并部署
+**Branch**: `main`
+
+### Summary
+
+完成断层控制室与编辑式公开首页视觉重设计，加入本地 Iconify 与暖色材质 Token；提交并推送 main，部署标签 ak47token-2026-08-22-frontend-control-room.1 到 RainYun。现网 new-api、PostgreSQL、Redis 健康，Nginx 配置通过，公开首页与 About 页源码链接和 New API 归属验收通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `674d6dcc` | (see git log) |
+| `c304ab95` | (see git log) |
+
+### Status
+
+[OK] **Completed**
