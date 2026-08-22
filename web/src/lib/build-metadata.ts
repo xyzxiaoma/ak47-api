@@ -61,12 +61,14 @@ declare global {
   }
 }
 
-function readPublicEnv(name: string): string | undefined {
+function readPublicEnv(
+  name: 'VITE_REACT_APP_VERSION' | 'VITE_DERIVATIVE_SOURCE_URL'
+): string | undefined {
   try {
-    const env = (
-      import.meta as unknown as { env?: Record<string, string | undefined> }
-    ).env
-    const raw = env?.[name]
+    const raw =
+      name === 'VITE_REACT_APP_VERSION'
+        ? process.env.VITE_REACT_APP_VERSION
+        : process.env.VITE_DERIVATIVE_SOURCE_URL
     if (typeof raw === 'string' && raw.trim().length > 0) return raw.trim()
   } catch {
     // import.meta may be unavailable in some test environments.

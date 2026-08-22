@@ -14,6 +14,10 @@ export default defineConfig(({ envMode }) => {
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
     'http://localhost:3000'
+  const derivativeSourceUrl =
+    process.env.VITE_DERIVATIVE_SOURCE_URL ||
+    env.rawPublicVars.VITE_DERIVATIVE_SOURCE_URL ||
+    'https://github.com/xyzxiaoma/ak47-api'
 
   const isProd = envMode === 'production'
   const devProxy = Object.fromEntries(
@@ -55,6 +59,10 @@ export default defineConfig(({ envMode }) => {
     source: {
       entry: {
         index: './src/main.tsx',
+      },
+      define: {
+        'process.env.VITE_DERIVATIVE_SOURCE_URL':
+          JSON.stringify(derivativeSourceUrl),
       },
     },
     resolve: {
