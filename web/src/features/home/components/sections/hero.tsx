@@ -79,7 +79,7 @@ export function Hero(props: HeroProps) {
             <span className='landing-kicker-index'>01 / 04</span>
           </div>
 
-          <h1 className='landing-display max-w-4xl text-[clamp(2.8rem,7vw,7.8rem)]'>
+          <h1 className='landing-display max-w-3xl text-[clamp(2.35rem,5vw,5.4rem)]'>
             {t('Unified API Gateway for')}
             <span className='landing-display-accent'>
               {t('Vast Range of AI Models')}

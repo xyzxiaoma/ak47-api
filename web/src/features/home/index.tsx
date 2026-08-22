@@ -26,7 +26,14 @@ import { useTheme } from '@/context/theme-provider'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import {
+  CTA,
+  Features,
+  Hero,
+  HowItWorks,
+  ModelMarquee,
+  Stats,
+} from './components'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -121,8 +128,19 @@ export function Home() {
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
+    <PublicLayout
+      showMainContainer={false}
+      siteName='AK47 Token'
+      logo={
+        <img
+          src='/ak47-token-logo-v2.png'
+          alt='AK47 Token'
+          className='size-full rounded-lg object-contain'
+        />
+      }
+    >
       <Hero isAuthenticated={isAuthenticated} />
+      <ModelMarquee />
       <Stats />
       <Features />
       <HowItWorks />

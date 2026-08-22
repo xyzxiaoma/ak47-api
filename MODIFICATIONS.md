@@ -13,4 +13,5 @@ This project is a modified version of New API distributed under the GNU Affero G
 
 - 采用“断层控制室 + 编辑式公开首页”方向，统一公开站点、认证壳层、Dashboard 和核心业务页的暖色材质视觉。
 - 增加本地 Iconify 图标注册表、噪点/纸张纹理背景与非线性动效，保留 API、路由、权限、账务和国际化契约不变。
+- 使用 imagegen 重新制作带 AK-47 步枪轮廓的 AK47 Token 主页 Logo，收敛首屏标题字号，并增加从公开定价数据读取的横向模型滚动条。
 - 部署标签：`ak47token-2026-08-22-frontend-control-room.1`。
