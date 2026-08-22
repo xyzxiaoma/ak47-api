@@ -43,6 +43,7 @@ const (
 	modelsDevHost               = "models.dev"
 	modelsDevPath               = "/api.json"
 	modelsDevInputCostRatioBase = 1000.0
+	relaxyCodeModelListPath     = "/prod-api/api/v1/model/list"
 )
 
 func nearlyEqual(a, b float64) bool {
@@ -233,6 +234,13 @@ func FetchUpstreamRatios(c *gin.Context) {
 				fullURL = chItem.BaseURL + "/v1/models"
 			} else if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
 				fullURL = endpoint
+			} else if (endpoint == "" || endpoint == defaultEndpoint) && isRelaxyCodeHost(chItem.BaseURL) {
+				var ok bool
+				fullURL, ok = relaxyCodeModelListURL(chItem.BaseURL)
+				if !ok {
+					ch <- upstreamResult{Name: chItem.Name, Err: "无法构造 RelaxyCode 价格接口地址"}
+					return
+				}
 			} else {
 				if endpoint == "" {
 					endpoint = defaultEndpoint
@@ -241,7 +249,15 @@ func FetchUpstreamRatios(c *gin.Context) {
 				}
 				fullURL = chItem.BaseURL + endpoint
 			}
+			// RelaxyCode 的价格页面不是 JSON 接口。即使前端把价格页面完整地址
+			// 填入 endpoint，也要改用公开模型价格接口，避免解析到 HTML。
+			if isRelaxyCodePricingEndpoint(fullURL) {
+				if modelListURL, ok := relaxyCodeModelListURL(fullURL); ok {
+					fullURL = modelListURL
+				}
+			}
 			isModelsDev := isModelsDevAPIEndpoint(fullURL)
+			isRelaxyCode := isRelaxyCodeModelListEndpoint(fullURL)
 
 			uniqueName := chItem.Name
 			if chItem.ID != 0 {
@@ -331,6 +347,18 @@ func FetchUpstreamRatios(c *gin.Context) {
 				converted, err := convertModelsDevToRatioData(bytes.NewReader(bodyBytes))
 				if err != nil {
 					logger.LogWarn(c.Request.Context(), "models.dev parse failed from "+chItem.Name+": "+err.Error())
+					ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
+					return
+				}
+				ch <- upstreamResult{Name: uniqueName, Data: converted}
+				return
+			}
+
+			// type5：RelaxyCode /prod-api/api/v1/model/list，转换基础价格和阶梯价格。
+			if isRelaxyCode {
+				converted, err := convertRelaxyCodeModelListToRatioData(bytes.NewReader(bodyBytes))
+				if err != nil {
+					logger.LogWarn(c.Request.Context(), "RelaxyCode parse failed from "+chItem.Name+": "+err.Error())
 					ch <- upstreamResult{Name: uniqueName, Err: err.Error()}
 					return
 				}
@@ -712,6 +740,213 @@ func isModelsDevAPIEndpoint(rawURL string) bool {
 		path = "/"
 	}
 	return path == modelsDevPath
+}
+
+func isRelaxyCodeHost(rawURL string) bool {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsedURL.Hostname())
+	return host == "relaxycode.com" || host == "www.relaxycode.com"
+}
+
+func relaxyCodeModelListURL(baseURL string) (string, bool) {
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || !isRelaxyCodeHost(baseURL) || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return "", false
+	}
+	parsedURL.Path = relaxyCodeModelListPath
+	parsedURL.RawPath = ""
+	parsedURL.RawQuery = ""
+	parsedURL.Fragment = ""
+	return parsedURL.String(), true
+}
+
+func isRelaxyCodeModelListEndpoint(rawURL string) bool {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || !isRelaxyCodeHost(rawURL) {
+		return false
+	}
+	path := strings.TrimSuffix(parsedURL.Path, "/")
+	return path == relaxyCodeModelListPath || path == "/api/v1/model/list"
+}
+
+func isRelaxyCodePricingEndpoint(rawURL string) bool {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil || !isRelaxyCodeHost(rawURL) {
+		return false
+	}
+	path := strings.TrimSuffix(parsedURL.Path, "/")
+	if path == "" || path == "/api/pricing" {
+		return true
+	}
+	// 用户有时会把 RelaxyCode 网页价格页地址直接填入同步 endpoint。
+	return strings.HasSuffix(path, "/dashboard/pricing")
+}
+
+type relaxyCodeModelListResponse struct {
+	Code    string                 `json:"code"`
+	Message string                 `json:"message"`
+	Data    []relaxyCodeModelPrice `json:"data"`
+}
+
+type relaxyCodeModelPrice struct {
+	ModelID          string                `json:"modelId"`
+	InputPrice       float64               `json:"inputPrice"`
+	OutputPrice      float64               `json:"outputPrice"`
+	CacheCreatePrice float64               `json:"cacheCreatePrice"`
+	CacheReadPrice   float64               `json:"cacheReadPrice"`
+	PriceTiers       []relaxyCodePriceTier `json:"priceTiers"`
+}
+
+type relaxyCodePriceTier struct {
+	ContextThreshold int64   `json:"contextThreshold"`
+	InputPrice       float64 `json:"inputPrice"`
+	OutputPrice      float64 `json:"outputPrice"`
+	CacheCreatePrice float64 `json:"cacheCreatePrice"`
+	CacheReadPrice   float64 `json:"cacheReadPrice"`
+}
+
+type relaxyCodePriceValues struct {
+	Input       float64
+	Output      float64
+	CacheCreate float64
+	CacheRead   float64
+}
+
+func relaxyCodePriceValuesValid(values relaxyCodePriceValues) bool {
+	return isValidNonNegativeCost(values.Input) &&
+		isValidNonNegativeCost(values.Output) &&
+		isValidNonNegativeCost(values.CacheCreate) &&
+		isValidNonNegativeCost(values.CacheRead)
+}
+
+func relaxyCodePriceExpression(values relaxyCodePriceValues) string {
+	format := func(value float64) string {
+		return strconv.FormatFloat(value, 'f', -1, 64)
+	}
+	return strings.Join([]string{
+		"p * " + format(values.Input),
+		"c * " + format(values.Output),
+		"cr * " + format(values.CacheRead),
+		"cc * " + format(values.CacheCreate),
+	}, " + ")
+}
+
+func buildRelaxyCodeBillingExpr(base relaxyCodePriceValues, tiers []relaxyCodePriceTier) string {
+	expr := `tier("base", ` + relaxyCodePriceExpression(base) + ")"
+	validTiers := make([]relaxyCodePriceTier, 0, len(tiers))
+	seenThresholds := make(map[int64]struct{}, len(tiers))
+	for _, tier := range tiers {
+		values := relaxyCodePriceValues{
+			Input:       tier.InputPrice,
+			Output:      tier.OutputPrice,
+			CacheCreate: tier.CacheCreatePrice,
+			CacheRead:   tier.CacheReadPrice,
+		}
+		if tier.ContextThreshold <= 0 || !relaxyCodePriceValuesValid(values) {
+			continue
+		}
+		if _, exists := seenThresholds[tier.ContextThreshold]; exists {
+			continue
+		}
+		seenThresholds[tier.ContextThreshold] = struct{}{}
+		validTiers = append(validTiers, tier)
+	}
+	sort.Slice(validTiers, func(i, j int) bool {
+		return validTiers[i].ContextThreshold < validTiers[j].ContextThreshold
+	})
+
+	for i := len(validTiers) - 1; i >= 0; i-- {
+		tier := validTiers[i]
+		values := relaxyCodePriceValues{
+			Input:       tier.InputPrice,
+			Output:      tier.OutputPrice,
+			CacheCreate: tier.CacheCreatePrice,
+			CacheRead:   tier.CacheReadPrice,
+		}
+		tierName := fmt.Sprintf("tier-%d", tier.ContextThreshold)
+		tierExpr := `tier("` + tierName + `", ` + relaxyCodePriceExpression(values) + ")"
+		expr = fmt.Sprintf("len < %d ? %s : %s", tier.ContextThreshold, expr, tierExpr)
+	}
+	return expr
+}
+
+// convertRelaxyCodeModelListToRatioData 将 RelaxyCode 公开的 1 倍基础价格转换为
+// New API 倍率映射和阶梯计费表达式。
+func convertRelaxyCodeModelListToRatioData(reader io.Reader) (map[string]any, error) {
+	var response relaxyCodeModelListResponse
+	if err := common.DecodeJson(reader, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode RelaxyCode model pricing response: %w", err)
+	}
+	if response.Code != "" && response.Code != "0" {
+		if response.Message == "" {
+			response.Message = "unknown upstream error"
+		}
+		return nil, fmt.Errorf("RelaxyCode pricing response failed: %s", response.Message)
+	}
+	if len(response.Data) == 0 {
+		return nil, fmt.Errorf("RelaxyCode pricing response contains no models")
+	}
+
+	modelRatioMap := make(map[string]any)
+	completionRatioMap := make(map[string]any)
+	cacheRatioMap := make(map[string]any)
+	createCacheRatioMap := make(map[string]any)
+	billingModeMap := make(map[string]any)
+	billingExprMap := make(map[string]any)
+
+	for _, model := range response.Data {
+		modelName := strings.TrimSpace(model.ModelID)
+		if modelName == "" {
+			continue
+		}
+		base := relaxyCodePriceValues{
+			Input:       model.InputPrice,
+			Output:      model.OutputPrice,
+			CacheCreate: model.CacheCreatePrice,
+			CacheRead:   model.CacheReadPrice,
+		}
+		if !relaxyCodePriceValuesValid(base) {
+			continue
+		}
+
+		modelRatioMap[modelName] = roundRatioValue(base.Input / 2)
+		if base.Input > 0 {
+			completionRatioMap[modelName] = roundRatioValue(base.Output / base.Input)
+			cacheRatioMap[modelName] = roundRatioValue(base.CacheRead / base.Input)
+			createCacheRatioMap[modelName] = roundRatioValue(base.CacheCreate / base.Input)
+		}
+		if len(model.PriceTiers) > 0 {
+			billingModeMap[modelName] = billing_setting.BillingModeTieredExpr
+			billingExprMap[modelName] = buildRelaxyCodeBillingExpr(base, model.PriceTiers)
+		}
+	}
+
+	converted := make(map[string]any)
+	if len(modelRatioMap) > 0 {
+		converted["model_ratio"] = modelRatioMap
+	}
+	if len(completionRatioMap) > 0 {
+		converted["completion_ratio"] = completionRatioMap
+	}
+	if len(cacheRatioMap) > 0 {
+		converted["cache_ratio"] = cacheRatioMap
+	}
+	if len(createCacheRatioMap) > 0 {
+		converted["create_cache_ratio"] = createCacheRatioMap
+	}
+	if len(billingModeMap) > 0 {
+		converted[billing_setting.BillingModeField] = billingModeMap
+	}
+	if len(billingExprMap) > 0 {
+		converted[billing_setting.BillingExprField] = billingExprMap
+	}
+	if len(modelRatioMap) == 0 {
+		return nil, fmt.Errorf("RelaxyCode pricing response contains no valid model prices")
+	}
+	return converted, nil
 }
 
 // convertOpenRouterToRatioData parses OpenRouter's /v1/models response and converts
