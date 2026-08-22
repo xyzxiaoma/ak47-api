@@ -16,9 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Icon } from '@iconify/react/offline'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -28,6 +28,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { iconifyName } from '@/lib/iconify-icons'
 import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -71,7 +72,12 @@ export function Channels() {
           }
         >
           <span>{retryLabel}</span>
-          <Settings2 data-icon='inline-end' />
+          <Icon
+            icon={iconifyName('settings')}
+            width='14'
+            height='14'
+            aria-hidden='true'
+          />
         </TooltipTrigger>
         <TooltipContent>
           <p>{t('Retry Settings')}</p>

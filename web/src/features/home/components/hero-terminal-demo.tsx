@@ -20,7 +20,7 @@ import { useState, useEffect, useRef, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
-type AccentTone = 'emerald' | 'amber' | 'blue' | 'violet'
+type AccentTone = 'emerald' | 'amber' | 'ember' | 'rust'
 
 interface ApiDemoConfig {
   id: string
@@ -56,17 +56,17 @@ const ACCENT_CLASSES: Record<
     badge:
       'bg-amber-500/10 text-amber-600 dark:bg-amber-400/10 dark:text-amber-400',
   },
-  blue: {
-    activeText: 'text-blue-600 dark:text-blue-400',
-    activeBorder: 'border-blue-500 dark:border-blue-400',
+  ember: {
+    activeText: 'text-[color:var(--brand-ember)]',
+    activeBorder: 'border-[color:var(--brand-ember)]',
     badge:
-      'bg-blue-500/10 text-blue-600 dark:bg-blue-400/10 dark:text-blue-400',
+      'bg-[color:color-mix(in_oklch,var(--brand-ember)_12%,transparent)] text-[color:var(--brand-ember)]',
   },
-  violet: {
-    activeText: 'text-violet-600 dark:text-violet-400',
-    activeBorder: 'border-violet-500 dark:border-violet-400',
+  rust: {
+    activeText: 'text-[color:var(--brand-rust)]',
+    activeBorder: 'border-[color:var(--brand-rust)]',
     badge:
-      'bg-violet-500/10 text-violet-600 dark:bg-violet-400/10 dark:text-violet-400',
+      'bg-[color:color-mix(in_oklch,var(--brand-rust)_12%,transparent)] text-[color:var(--brand-rust)]',
   },
 }
 
@@ -134,7 +134,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     responseHighlights: ['<text>', '<in>', '<out>'],
     tokens: 29,
     latency: 156,
-    accent: 'blue',
+    accent: 'ember',
   },
   {
     id: 'gemini',
@@ -157,7 +157,7 @@ const API_DEMOS: ApiDemoConfig[] = [
     responseHighlights: ['<text>', '<tokens>'],
     tokens: 25,
     latency: 93,
-    accent: 'violet',
+    accent: 'rust',
   },
 ]
 
@@ -227,6 +227,7 @@ export function HeroTerminalDemo(props: HeroTerminalDemoProps) {
             const isActive = index === activeIndex
             return (
               <button
+                type='button'
                 key={item.id}
                 onClick={() => handleSelect(index)}
                 className={cn(
@@ -512,13 +513,13 @@ function Command(props: { children: ReactNode }) {
 
 function Flag(props: { children: ReactNode }) {
   return (
-    <span className='text-blue-600 dark:text-blue-400'>{props.children}</span>
+    <span className='text-[color:var(--brand-ember)]'>{props.children}</span>
   )
 }
 
 function Key(props: { children: ReactNode }) {
   return (
-    <span className='text-sky-700 dark:text-sky-300'>{props.children}</span>
+    <span className='text-[color:var(--brand-moss)]'>{props.children}</span>
   )
 }
 
@@ -530,7 +531,7 @@ function StringText(props: { children: ReactNode }) {
 
 function NumberText(props: { children: ReactNode }) {
   return (
-    <span className='font-medium text-violet-600 dark:text-violet-300'>
+    <span className='font-medium text-[color:var(--brand-rust)]'>
       {props.children}
     </span>
   )

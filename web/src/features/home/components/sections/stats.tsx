@@ -105,23 +105,21 @@ export function Stats(_props: StatsProps) {
   ]
 
   return (
-    <div className='border-border/40 bg-muted/10 relative z-10 border-y'>
-      <div className='mx-auto max-w-6xl px-6 py-10 md:py-12'>
-        <div className='grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12'>
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className='flex flex-col items-center text-center'
-            >
-              <span className='text-2xl font-bold tracking-tight md:text-3xl'>
-                <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
-              </span>
-              <span className='text-muted-foreground mt-1.5 text-xs'>
-                {s.label}
-              </span>
-            </div>
-          ))}
-        </div>
+    <div className='landing-stats relative z-10 border-y border-[color:var(--border)]/80'>
+      <div className='mx-auto grid max-w-[90rem] gap-8 px-5 py-8 sm:px-8 md:grid-cols-[.8fr_1fr_1fr_1.2fr] md:gap-0 md:py-10 lg:px-12'>
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className='flex items-start gap-4 border-[color:var(--border)]/70 md:border-l md:px-7 first:md:border-l-0 first:md:pl-0'
+          >
+            <span className='font-mono text-2xl font-semibold tracking-tight md:text-3xl'>
+              <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
+            </span>
+            <span className='landing-mono-label max-w-28 pt-1 text-[10px] leading-relaxed'>
+              {s.label}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   )

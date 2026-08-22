@@ -75,6 +75,7 @@ Transitive dependencies should be audited before a final external release.
 | web | production | npm | `@hookform/resolvers` | `5.4.0` | MIT |
 | web | production | npm | `@hugeicons/core-free-icons` | `4.2.2` | MIT |
 | web | production | npm | `@hugeicons/react` | `1.1.9` | MIT |
+| web | production | npm | `@iconify/react` | `6.0.2` | MIT |
 | web | production | npm | `@lezer/highlight` | `1.2.3` | MIT |
 | web | production | npm | `@lobehub/icons` | `5.14.0` | MIT |
 | web | production | npm | `@tanstack/react-query` | `5.101.2` | MIT |

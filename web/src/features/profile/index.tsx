@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Main } from '@/components/layout'
+import { useTranslation } from 'react-i18next'
+
+import { Main, SectionPageLayout } from '@/components/layout'
 import {
   CardStaggerContainer,
   CardStaggerItem,
@@ -36,6 +38,7 @@ import { TwoFACard } from './components/two-fa-card'
 import { useProfile } from './hooks'
 
 export function Profile() {
+  const { t } = useTranslation()
   const { profile, loading, refreshProfile } = useProfile()
   const { status } = useStatus()
   const permissions = useAuthStore((s) => s.auth.user?.permissions)
@@ -48,45 +51,50 @@ export function Profile() {
   const canConfigureSidebar = permissions?.sidebar_settings !== false
 
   return (
-    <Main>
-      <div className='min-h-0 flex-1 overflow-auto px-3 py-3 sm:px-4 sm:py-6'>
-        <CardStaggerContainer className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6'>
-          <CardStaggerItem>
-            <ProfileHeader profile={profile} loading={loading} />
-          </CardStaggerItem>
+    <SectionPageLayout>
+      <SectionPageLayout.Title>{t('Profile')}</SectionPageLayout.Title>
+      <SectionPageLayout.Content>
+        <Main className='control-room-profile-main'>
+          <div className='min-h-0 flex-1 overflow-auto px-0 py-1 sm:py-2'>
+            <CardStaggerContainer className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-6'>
+              <CardStaggerItem>
+                <ProfileHeader profile={profile} loading={loading} />
+              </CardStaggerItem>
 
-          <CardStaggerItem>
-            <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
-              <div className='space-y-4 sm:space-y-6'>
-                <ProfileSettingsCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
-                <LanguagePreferencesCard
-                  profile={profile}
-                  onProfileUpdate={refreshProfile}
-                />
-                <ProfileSecurityCard profile={profile} loading={loading} />
-                <LoginSessionsCard />
-              </div>
+              <CardStaggerItem>
+                <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
+                  <div className='space-y-4 sm:space-y-6'>
+                    <ProfileSettingsCard
+                      profile={profile}
+                      loading={loading}
+                      onProfileUpdate={refreshProfile}
+                    />
+                    <LanguagePreferencesCard
+                      profile={profile}
+                      onProfileUpdate={refreshProfile}
+                    />
+                    <ProfileSecurityCard profile={profile} loading={loading} />
+                    <LoginSessionsCard />
+                  </div>
 
-              <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>
-                {checkinEnabled && (
-                  <CheckinCalendarCard
-                    checkinEnabled={checkinEnabled}
-                    turnstileEnabled={turnstileEnabled}
-                    turnstileSiteKey={turnstileSiteKey}
-                  />
-                )}
-                {canConfigureSidebar && <SidebarModulesCard />}
-                <PasskeyCard loading={loading} />
-                <TwoFACard loading={loading} />
-              </div>
-            </div>
-          </CardStaggerItem>
-        </CardStaggerContainer>
-      </div>
-    </Main>
+                  <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>
+                    {checkinEnabled && (
+                      <CheckinCalendarCard
+                        checkinEnabled={checkinEnabled}
+                        turnstileEnabled={turnstileEnabled}
+                        turnstileSiteKey={turnstileSiteKey}
+                      />
+                    )}
+                    {canConfigureSidebar && <SidebarModulesCard />}
+                    <PasskeyCard loading={loading} />
+                    <TwoFACard loading={loading} />
+                  </div>
+                </div>
+              </CardStaggerItem>
+            </CardStaggerContainer>
+          </div>
+        </Main>
+      </SectionPageLayout.Content>
+    </SectionPageLayout>
   )
 }
