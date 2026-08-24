@@ -199,15 +199,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           className='focus-visible:ring-ring absolute inset-0 z-0 rounded-2xl focus-visible:ring-2 focus-visible:outline-none'
         />
       )}
-      <div
-        aria-hidden
-        className='bg-card pointer-events-none absolute inset-[7px_-7px_-7px_7px] -z-20 [transform:rotate(-1.2deg)] rounded-2xl border shadow-sm'
-      />
-      <div
-        aria-hidden
-        className='bg-card pointer-events-none absolute inset-[4px_-4px_-4px_4px] -z-10 [transform:rotate(1deg)] rounded-2xl border shadow-sm'
-      />
-
       <div className='pointer-events-none relative z-10 flex min-w-0 flex-col p-3'>
         <div className='flex items-start justify-between gap-2'>
           <div className='flex min-w-0 items-start gap-2.5'>

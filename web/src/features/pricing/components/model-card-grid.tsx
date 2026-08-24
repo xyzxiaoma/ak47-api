@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -136,6 +137,7 @@ interface ModelCardStackProps {
 }
 
 function ModelCardStack(props: ModelCardStackProps) {
+  const shouldReduceMotion = useReducedMotion()
   const [activeIndex, setActiveIndex] = useState(0)
   const activeModel = props.models[activeIndex % props.models.length]
 
@@ -144,22 +146,68 @@ function ModelCardStack(props: ModelCardStackProps) {
   }
 
   return (
-    <div className='min-w-0' data-model-stack={props.groupName}>
-      <ModelCard
-        model={activeModel}
-        tokenUnit={props.tokenUnit}
-        priceRate={props.priceRate}
-        usdExchangeRate={props.usdExchangeRate}
-        showRechargePrice={props.showRechargePrice}
-        selectedGroup={props.selectedGroup}
-        onClick={() => props.onModelClick(activeModel.model_name || '')}
-        onAdvance={
-          props.models.length > 1
-            ? () =>
-                setActiveIndex((current) => (current + 1) % props.models.length)
-            : undefined
-        }
+    <div
+      className='relative isolate min-w-0'
+      data-model-stack={props.groupName}
+      aria-live='polite'
+    >
+      <div
+        aria-hidden
+        className='bg-card pointer-events-none absolute inset-[7px_-7px_-7px_7px] z-0 [transform:rotate(-1.2deg)] rounded-2xl border shadow-sm'
       />
+      <div
+        aria-hidden
+        className='bg-card pointer-events-none absolute inset-[4px_-4px_-4px_4px] z-0 [transform:rotate(1deg)] rounded-2xl border shadow-sm'
+      />
+
+      <AnimatePresence initial={false} mode='popLayout'>
+        <motion.div
+          key={activeModel.id ?? activeModel.model_name}
+          className='relative z-10'
+          data-model-stack-card
+          initial={
+            shouldReduceMotion
+              ? { opacity: 1 }
+              : { opacity: 0, rotate: -1.5, scale: 0.96, y: 10, zIndex: 5 }
+          }
+          animate={{ opacity: 1, rotate: 0, scale: 1, x: 0, y: 0, zIndex: 10 }}
+          exit={
+            shouldReduceMotion
+              ? { opacity: 0 }
+              : {
+                  opacity: 0,
+                  rotate: 7,
+                  scale: 0.97,
+                  x: 88,
+                  y: -18,
+                  zIndex: 20,
+                }
+          }
+          transition={
+            shouldReduceMotion
+              ? { duration: 0 }
+              : { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
+          }
+        >
+          <ModelCard
+            model={activeModel}
+            tokenUnit={props.tokenUnit}
+            priceRate={props.priceRate}
+            usdExchangeRate={props.usdExchangeRate}
+            showRechargePrice={props.showRechargePrice}
+            selectedGroup={props.selectedGroup}
+            onClick={() => props.onModelClick(activeModel.model_name || '')}
+            onAdvance={
+              props.models.length > 1
+                ? () =>
+                    setActiveIndex(
+                      (current) => (current + 1) % props.models.length
+                    )
+                : undefined
+            }
+          />
+        </motion.div>
+      </AnimatePresence>
     </div>
   )
 }
