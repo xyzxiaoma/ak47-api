@@ -68,38 +68,21 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 
   return (
     <div className='space-y-4 sm:space-y-5'>
-      {modelGroups.map(([groupName, models]) => (
-        <section key={groupName} className='space-y-3'>
-          <header className='flex items-end justify-between border-b pb-2'>
-            <div>
-              <h2 className='text-foreground text-base font-semibold'>
-                {groupName}
-              </h2>
-              <p className='text-muted-foreground text-xs'>
-                {t('{{count}} models', { count: models.length })}
-              </p>
-            </div>
-            <span className='bg-muted text-muted-foreground rounded-full px-2 py-1 text-xs font-medium'>
-              {models.length}
-            </span>
-          </header>
-
-          <div className='grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3'>
-            {models.map((model) => (
-              <ModelCard
-                key={model.id ?? model.model_name}
-                model={model}
-                tokenUnit={tokenUnit}
-                priceRate={props.priceRate}
-                usdExchangeRate={props.usdExchangeRate}
-                showRechargePrice={props.showRechargePrice}
-                selectedGroup={props.selectedGroup}
-                onClick={() => props.onModelClick(model.model_name || '')}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+      <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'>
+        {modelGroups.map(([groupName, models]) => (
+          <ModelCardStack
+            key={groupName}
+            groupName={groupName}
+            models={models}
+            tokenUnit={tokenUnit}
+            priceRate={props.priceRate}
+            usdExchangeRate={props.usdExchangeRate}
+            showRechargePrice={props.showRechargePrice}
+            selectedGroup={props.selectedGroup}
+            onModelClick={props.onModelClick}
+          />
+        ))}
+      </div>
 
       {totalPages > 1 && (
         <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 border-t px-4 py-3 text-sm sm:flex-row'>
@@ -137,6 +120,46 @@ export function ModelCardGrid(props: ModelCardGridProps) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+interface ModelCardStackProps {
+  groupName: string
+  models: PricingModel[]
+  onModelClick: (modelName: string) => void
+  priceRate?: number
+  usdExchangeRate?: number
+  tokenUnit: TokenUnit
+  showRechargePrice?: boolean
+  selectedGroup?: string
+}
+
+function ModelCardStack(props: ModelCardStackProps) {
+  const [activeIndex, setActiveIndex] = useState(0)
+  const activeModel = props.models[activeIndex % props.models.length]
+
+  if (!activeModel) {
+    return null
+  }
+
+  return (
+    <div className='min-w-0' data-model-stack={props.groupName}>
+      <ModelCard
+        model={activeModel}
+        tokenUnit={props.tokenUnit}
+        priceRate={props.priceRate}
+        usdExchangeRate={props.usdExchangeRate}
+        showRechargePrice={props.showRechargePrice}
+        selectedGroup={props.selectedGroup}
+        onClick={() => props.onModelClick(activeModel.model_name || '')}
+        onAdvance={
+          props.models.length > 1
+            ? () =>
+                setActiveIndex((current) => (current + 1) % props.models.length)
+            : undefined
+        }
+      />
     </div>
   )
 }
