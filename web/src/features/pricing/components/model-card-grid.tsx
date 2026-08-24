@@ -16,18 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelCard } from './model-card'
-import type { ModelPerfBadgeData } from './model-perf-badge'
 
 export interface ModelCardGridProps {
   models: PricingModel[]
@@ -47,25 +44,23 @@ export function ModelCardGrid(props: ModelCardGridProps) {
   const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
   const currentPage = Math.min(page, totalPages)
 
-  const perfQuery = useQuery({
-    queryKey: ['perf-metrics-summary', 24],
-    queryFn: () => getPerfMetricsSummary(24),
-    staleTime: 60 * 1000,
-    retry: false,
-  })
-
   const pagedModels = useMemo(() => {
     const start = (currentPage - 1) * pageSize
     return props.models.slice(start, start + pageSize)
   }, [currentPage, pageSize, props.models])
 
-  const perfMap = useMemo(() => {
-    const map = new Map<string, ModelPerfBadgeData>()
-    for (const model of perfQuery.data?.data?.models ?? []) {
-      map.set(model.model_name, model)
+  const modelGroups = useMemo(() => {
+    const groupedModels = new Map<string, PricingModel[]>()
+
+    for (const model of pagedModels) {
+      const groupName = model.enable_groups?.[0] || t('Standard')
+      const models = groupedModels.get(groupName) || []
+      models.push(model)
+      groupedModels.set(groupName, models)
     }
-    return map
-  }, [perfQuery.data])
+
+    return [...groupedModels.entries()]
+  }, [pagedModels, t])
 
   if (props.models.length === 0) {
     return null
@@ -73,21 +68,38 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 
   return (
     <div className='space-y-4 sm:space-y-5'>
-      <div className='grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 lg:grid-cols-3'>
-        {pagedModels.map((model) => (
-          <ModelCard
-            key={model.id ?? model.model_name}
-            model={model}
-            tokenUnit={tokenUnit}
-            priceRate={props.priceRate}
-            usdExchangeRate={props.usdExchangeRate}
-            showRechargePrice={props.showRechargePrice}
-            selectedGroup={props.selectedGroup}
-            perf={perfMap.get(model.model_name || '')}
-            onClick={() => props.onModelClick(model.model_name || '')}
-          />
-        ))}
-      </div>
+      {modelGroups.map(([groupName, models]) => (
+        <section key={groupName} className='space-y-3'>
+          <header className='flex items-end justify-between border-b pb-2'>
+            <div>
+              <h2 className='text-foreground text-base font-semibold'>
+                {groupName}
+              </h2>
+              <p className='text-muted-foreground text-xs'>
+                {t('{{count}} models', { count: models.length })}
+              </p>
+            </div>
+            <span className='bg-muted text-muted-foreground rounded-full px-2 py-1 text-xs font-medium'>
+              {models.length}
+            </span>
+          </header>
+
+          <div className='grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3'>
+            {models.map((model) => (
+              <ModelCard
+                key={model.id ?? model.model_name}
+                model={model}
+                tokenUnit={tokenUnit}
+                priceRate={props.priceRate}
+                usdExchangeRate={props.usdExchangeRate}
+                showRechargePrice={props.showRechargePrice}
+                selectedGroup={props.selectedGroup}
+                onClick={() => props.onModelClick(model.model_name || '')}
+              />
+            ))}
+          </div>
+        </section>
+      ))}
 
       {totalPages > 1 && (
         <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 border-t px-4 py-3 text-sm sm:flex-row'>

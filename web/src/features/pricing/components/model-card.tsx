@@ -29,12 +29,9 @@ import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
-import { parseTags } from '../lib/filters'
 import { isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
-import { ModelBillingModeBadge } from './model-billing-mode-badge'
-import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
 
 export interface ModelCardProps {
   model: PricingModel
@@ -44,7 +41,6 @@ export interface ModelCardProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
-  perf?: ModelPerfBadgeData
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -55,10 +51,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const usdExchangeRate = props.usdExchangeRate ?? 1
   const showRechargePrice = props.showRechargePrice ?? false
   const isTokenBased = isTokenBasedModel(props.model)
-  const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
-  const tags = parseTags(props.model.tags)
   const groups = props.model.enable_groups || []
-  const endpoints = props.model.supported_endpoint_types || []
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
   const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
@@ -80,11 +73,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     : null
 
   const primaryGroup = groups[0]
-  const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
-  const hiddenCount =
-    Math.max(groups.length - 1, 0) +
-    Math.max(endpoints.length - 2, 0) +
-    Math.max(tags.length - 2, 0)
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -196,15 +184,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   return (
     <div
       className={cn(
-        'group relative isolate grid min-h-[218px] overflow-visible rounded-[1.1rem] border bg-card p-0 shadow-sm transition-colors',
-        'lg:grid-cols-[minmax(0,1.25fr)_minmax(138px,.68fr)]',
+        'group relative isolate grid min-h-[156px] overflow-visible rounded-2xl border bg-card p-0 shadow-sm transition-colors',
+        'lg:grid-cols-[minmax(0,1.3fr)_minmax(130px,.7fr)]',
         'hover:border-foreground/20 hover:shadow-md'
       )}
     >
-      <div className='pointer-events-none absolute inset-[6px_-6px_-6px_6px] -z-10 rounded-[1.1rem] border bg-card [transform:rotate(-1deg)]' />
-      <div className='pointer-events-none absolute inset-[3px_-3px_-3px_3px] -z-10 rounded-[1.1rem] border bg-card [transform:rotate(1.2deg)]' />
+      <div
+        aria-hidden
+        className='bg-card pointer-events-none absolute inset-[7px_-7px_-7px_7px] -z-20 [transform:rotate(-1.2deg)] rounded-2xl border shadow-sm'
+      />
+      <div
+        aria-hidden
+        className='bg-card pointer-events-none absolute inset-[4px_-4px_-4px_4px] -z-10 [transform:rotate(1deg)] rounded-2xl border shadow-sm'
+      />
 
-      <div className='flex min-w-0 flex-col p-3.5'>
+      <div className='flex min-w-0 flex-col p-3'>
         <div className='flex items-start justify-between gap-2'>
           <div className='flex min-w-0 items-start gap-2.5'>
             <div className='bg-muted/40 flex size-9 shrink-0 items-center justify-center rounded-lg'>
@@ -237,51 +231,22 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <Copy className='size-3.5' />
           </button>
         </div>
-
-        <div className='mt-5 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t pt-3'>
-          <span className='flex flex-col gap-0.5'>
-            <small className='text-muted-foreground text-[10px]'>{t('First token')}</small>
-            <b className='text-muted-foreground font-mono text-xs'>—</b>
-          </span>
-          <span className='flex flex-col gap-0.5'>
-            <small className='text-muted-foreground text-[10px]'>{t('24 Hours')}</small>
-            <b className='text-muted-foreground font-mono text-xs'>—</b>
-          </span>
-          <span className='flex flex-col gap-0.5'>
-            <small className='text-muted-foreground text-[10px]'>{t('Throughput short')}</small>
-            <b className='text-muted-foreground font-mono text-xs'>—</b>
-          </span>
-          <ModelPerfBadge perf={props.perf} className='self-end justify-self-end' />
-        </div>
-
-        <div className='mt-3 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5'>
-          {primaryGroup && (
-            <span className='text-muted-foreground text-sm font-medium'>
-              {primaryGroup}
-            </span>
-          )}
-          <ModelBillingModeBadge model={props.model} />
-          {bottomTags.map((item) => (
-            <span key={item} className='text-muted-foreground/70 text-xs'>
-              {item}
-            </span>
-          ))}
-          <span className='text-muted-foreground/50 text-xs'>{tokenUnitLabel}</span>
-          {hiddenCount > 0 && <span className='text-muted-foreground/40 text-xs'>+{hiddenCount}</span>}
-        </div>
       </div>
 
-      <aside className='border-border/60 bg-muted/10 flex flex-col rounded-b-[1.1rem] border-t p-3.5 lg:rounded-r-[1.1rem] lg:rounded-bl-none lg:border-t-0 lg:border-l'>
+      <aside className='border-border/60 bg-muted/10 flex flex-col rounded-b-2xl border-t p-3 lg:rounded-r-2xl lg:rounded-bl-none lg:border-t-0 lg:border-l'>
         <div className='flex items-center justify-between gap-2'>
           <strong className='text-foreground text-sm'>{t('Price')}</strong>
           <span className='bg-primary/10 text-primary rounded-md px-1.5 py-1 text-[10px] font-semibold'>
             {primaryGroup || t('Standard')}
           </span>
         </div>
-        <div className='mt-3.5 flex flex-col gap-2.5 text-xs'>{priceSummary}</div>
-        <div className='text-muted-foreground mt-auto flex items-center justify-between border-t pt-3 text-[10px]'>
+        <div className='mt-2.5 flex flex-col gap-2 text-xs'>{priceSummary}</div>
+        <div className='text-muted-foreground mt-auto flex items-center justify-between border-t pt-2.5 text-[10px]'>
           <span>{t('Enabled')}</span>
-          <span className='bg-primary/10 text-primary size-2 rounded-full' aria-hidden='true' />
+          <span
+            className='bg-primary/10 text-primary size-2 rounded-full'
+            aria-hidden='true'
+          />
         </div>
       </aside>
     </div>
