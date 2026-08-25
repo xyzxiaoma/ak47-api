@@ -26,10 +26,11 @@ import { cn } from '@/lib/utils'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
+  getDynamicPriceEntries,
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { getDisplayGroupRatio, isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 
@@ -73,7 +74,18 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       })
     : null
 
+  const displayGroupRatio = getDisplayGroupRatio(
+    props.model,
+    props.selectedGroup
+  )
+  const hasDiscount = displayGroupRatio < 1
+  const discountLabel = `${formatDiscount(displayGroupRatio)}折`
   const primaryGroup = groups[0]
+  const originalPriceModel = {
+    ...props.model,
+    model_group_ratio: undefined,
+    group_ratio: Object.fromEntries(groups.map((group) => [group, 1])),
+  }
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -84,7 +96,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   if (dynamicSummary) {
     if (dynamicSummary.isSpecialExpression) {
       priceSummary = (
-        <span className='min-w-0'>
+        <span className='min-w-0 text-xs'>
           <span className='text-amber-700 dark:text-amber-300'>
             {t('Special billing expression')}
           </span>
@@ -94,20 +106,30 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         </span>
       )
     } else if (dynamicSummary.primaryEntries.length > 0) {
+      const originalEntries = getDynamicPriceEntries(dynamicSummary.tier, {
+        tokenUnit,
+        showRechargePrice,
+        priceRate,
+        usdExchangeRate,
+        groupRatioMultiplier: 1,
+      })
       priceSummary = (
-        <>
-          {dynamicSummary.primaryEntries.map((entry) => (
-            <span
-              key={entry.key}
-              className='text-muted-foreground whitespace-nowrap'
-            >
-              {t(entry.shortLabel)}{' '}
-              <span className='text-foreground font-mono font-semibold'>
-                {entry.formatted}
-              </span>
-            </span>
-          ))}
-        </>
+        <div className='grid gap-2'>
+          {dynamicSummary.primaryEntries.map((entry) => {
+            const original = originalEntries.find(
+              (candidate) => candidate.key === entry.key
+            )
+            return (
+              <PriceRow
+                key={entry.key}
+                label={t(entry.shortLabel)}
+                original={original?.formatted || entry.formatted}
+                current={entry.formatted}
+                showOriginal={hasDiscount}
+              />
+            )
+          })}
+        </div>
       )
     } else {
       priceSummary = (
@@ -118,76 +140,105 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     }
   } else if (isTokenBased) {
     priceSummary = (
-      <>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Input')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
-        </span>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Output')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
-        </span>
-        {hasCachedPrice && (
-          <span className='text-muted-foreground whitespace-nowrap'>
-            {t('Cached')}{' '}
-            <span className='text-foreground font-mono font-semibold'>
-              {formatPrice(
-                props.model,
-                'cache',
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate,
-                props.selectedGroup
-              )}
-            </span>
-          </span>
-        )}
-      </>
-    )
-  } else {
-    priceSummary = (
-      <span className='text-muted-foreground whitespace-nowrap'>
-        <span className='text-foreground font-mono font-semibold'>
-          {formatRequestPrice(
-            props.model,
+      <div className='grid gap-2'>
+        <PriceRow
+          label={t('Input')}
+          original={formatPrice(
+            originalPriceModel,
+            'input',
+            tokenUnit,
             showRechargePrice,
             priceRate,
             usdExchangeRate,
             props.selectedGroup
           )}
-        </span>{' '}
-        / {t('request')}
-      </span>
+          current={formatPrice(
+            props.model,
+            'input',
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )}
+          showOriginal={hasDiscount}
+        />
+        <PriceRow
+          label={t('Output')}
+          original={formatPrice(
+            originalPriceModel,
+            'output',
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )}
+          current={formatPrice(
+            props.model,
+            'output',
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            props.selectedGroup
+          )}
+          showOriginal={hasDiscount}
+        />
+        {hasCachedPrice && (
+          <PriceRow
+            label={t('Cached')}
+            original={formatPrice(
+              originalPriceModel,
+              'cache',
+              tokenUnit,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate,
+              props.selectedGroup
+            )}
+            current={formatPrice(
+              props.model,
+              'cache',
+              tokenUnit,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate,
+              props.selectedGroup
+            )}
+            showOriginal={hasDiscount}
+          />
+        )}
+      </div>
+    )
+  } else {
+    priceSummary = (
+      <PriceRow
+        label={t('request')}
+        original={formatRequestPrice(
+          originalPriceModel,
+          showRechargePrice,
+          priceRate,
+          usdExchangeRate,
+          props.selectedGroup
+        )}
+        current={formatRequestPrice(
+          props.model,
+          showRechargePrice,
+          priceRate,
+          usdExchangeRate,
+          props.selectedGroup
+        )}
+        showOriginal={hasDiscount}
+      />
     )
   }
 
   return (
     <div
       className={cn(
-        'group relative isolate grid min-h-[124px] overflow-visible rounded-2xl border bg-card p-0 shadow-sm transition-colors',
-        'lg:grid-cols-[minmax(0,1.3fr)_minmax(130px,.7fr)]',
-        'hover:border-foreground/20 hover:shadow-md',
+        'group relative isolate overflow-hidden rounded-[20px] border bg-card/95 p-4 shadow-[0_14px_35px_-28px_hsl(var(--foreground)/0.5)] transition-all',
+        'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_18px_38px_-24px_hsl(var(--foreground)/0.55)]',
         props.onAdvance && 'cursor-pointer'
       )}
     >
@@ -199,10 +250,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           className='focus-visible:ring-ring absolute inset-0 z-0 rounded-2xl focus-visible:ring-2 focus-visible:outline-none'
         />
       )}
-      <div className='pointer-events-none relative z-10 flex min-w-0 flex-col p-3'>
+      <div className='pointer-events-none relative z-10 flex min-w-0 flex-col'>
         <div className='flex items-start justify-between gap-2'>
           <div className='flex min-w-0 items-start gap-2.5'>
-            <div className='bg-muted/40 flex size-9 shrink-0 items-center justify-center rounded-lg'>
+            <div className='bg-muted/40 flex size-10 shrink-0 items-center justify-center rounded-xl'>
               {modelIcon || (
                 <span className='text-muted-foreground text-sm font-bold'>
                   {initial}
@@ -232,24 +283,53 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <Copy className='size-3.5' />
           </button>
         </div>
+        <div className='border-border/70 mt-4 border-t pt-3'>
+          <div className='flex items-center justify-between gap-2'>
+            <strong className='text-foreground text-sm'>{t('Price')}</strong>
+            <div className='flex items-center gap-1.5'>
+              {hasDiscount && (
+                <span className='bg-primary/10 text-primary rounded-md px-1.5 py-1 text-[10px] font-bold'>
+                  {discountLabel}
+                </span>
+              )}
+              <span className='text-muted-foreground bg-muted/60 rounded-md px-1.5 py-1 text-[10px]'>
+                {primaryGroup || t('Standard')}
+              </span>
+            </div>
+          </div>
+          <div className='mt-2.5 text-xs'>{priceSummary}</div>
+        </div>
       </div>
-
-      <aside className='border-border/60 bg-muted/10 pointer-events-none relative z-10 flex flex-col rounded-b-2xl border-t p-3 lg:rounded-r-2xl lg:rounded-bl-none lg:border-t-0 lg:border-l'>
-        <div className='flex items-center justify-between gap-2'>
-          <strong className='text-foreground text-sm'>{t('Price')}</strong>
-          <span className='bg-primary/10 text-primary rounded-md px-1.5 py-1 text-[10px] font-semibold'>
-            {primaryGroup || t('Standard')}
-          </span>
-        </div>
-        <div className='mt-2.5 flex flex-col gap-2 text-xs'>{priceSummary}</div>
-        <div className='text-muted-foreground mt-auto flex items-center justify-between border-t pt-2.5 text-[10px]'>
-          <span>{t('Enabled')}</span>
-          <span
-            className='bg-primary/10 text-primary size-2 rounded-full'
-            aria-hidden='true'
-          />
-        </div>
-      </aside>
     </div>
   )
 })
+
+interface PriceRowProps {
+  label: string
+  original: string
+  current: string
+  showOriginal: boolean
+}
+
+function PriceRow(props: PriceRowProps) {
+  return (
+    <div className='flex items-baseline justify-between gap-3'>
+      <span className='text-muted-foreground'>{props.label}</span>
+      <span className='flex min-w-0 items-baseline justify-end gap-2 text-right'>
+        {props.showOriginal && (
+          <del className='text-muted-foreground/70 font-mono text-[11px]'>
+            {props.original}
+          </del>
+        )}
+        <strong className='text-foreground font-mono font-semibold tabular-nums'>
+          {props.current}
+        </strong>
+      </span>
+    </div>
+  )
+}
+
+function formatDiscount(ratio: number): string {
+  const value = Math.max(0, ratio * 10)
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1)
+}

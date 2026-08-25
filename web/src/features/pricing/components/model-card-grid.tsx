@@ -69,7 +69,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 
   return (
     <div className='space-y-4 sm:space-y-5'>
-      <div className='grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4'>
+      <div className='grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4'>
         {modelGroups.map(([groupName, models]) => (
           <ModelCardStack
             key={groupName}
@@ -147,23 +147,23 @@ function ModelCardStack(props: ModelCardStackProps) {
 
   return (
     <div
-      className='relative isolate min-w-0'
+      className='relative isolate min-w-0 px-1 pt-1 pb-2 [perspective:1200px]'
       data-model-stack={props.groupName}
       aria-live='polite'
     >
       <div
         aria-hidden
-        className='bg-card pointer-events-none absolute inset-[7px_-7px_-7px_7px] z-0 [transform:rotate(-1.2deg)] rounded-2xl border shadow-sm'
+        className='bg-card/75 pointer-events-none absolute inset-x-2 top-2 bottom-1 z-0 rotate-[-1.4deg] rounded-[20px] border shadow-sm'
       />
       <div
         aria-hidden
-        className='bg-card pointer-events-none absolute inset-[4px_-4px_-4px_4px] z-0 [transform:rotate(1deg)] rounded-2xl border shadow-sm'
+        className='bg-card/90 pointer-events-none absolute inset-x-1 top-0.5 bottom-0.5 z-0 rotate-[1deg] rounded-[20px] border shadow-sm'
       />
 
       <AnimatePresence initial={false} mode='popLayout'>
         <motion.div
           key={activeModel.id ?? activeModel.model_name}
-          className='relative z-10'
+          className='relative z-10 transform-gpu'
           data-model-stack-card
           initial={
             shouldReduceMotion
