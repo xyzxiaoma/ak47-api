@@ -22,6 +22,7 @@ import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
@@ -70,11 +71,12 @@ export function ModelCardGrid(props: ModelCardGridProps) {
   return (
     <div className='space-y-4 sm:space-y-5'>
       <div className='grid grid-cols-1 items-start gap-4 md:grid-cols-2 xl:grid-cols-4'>
-        {modelGroups.map(([groupName, models]) => (
+        {modelGroups.map(([groupName, models], index) => (
           <ModelCardStack
             key={groupName}
             groupName={groupName}
             models={models}
+            stackIndex={index}
             tokenUnit={tokenUnit}
             priceRate={props.priceRate}
             usdExchangeRate={props.usdExchangeRate}
@@ -128,6 +130,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 interface ModelCardStackProps {
   groupName: string
   models: PricingModel[]
+  stackIndex: number
   onModelClick: (modelName: string) => void
   priceRate?: number
   usdExchangeRate?: number
@@ -136,10 +139,38 @@ interface ModelCardStackProps {
   selectedGroup?: string
 }
 
+const STACK_VARIANTS = [
+  {
+    front: '[transform:rotate(-1.35deg)_translateY(4px)]',
+    backOne: 'left-1 right-[-10px] -top-2 bottom-[-4px] rotate-[2.4deg]',
+    backTwo: 'left-[-4px] right-1 -top-1 bottom-[-2px] rotate-[-1.8deg]',
+    shape: '[border-radius:24px_18px_22px_20px]',
+  },
+  {
+    front: '[transform:rotate(1.1deg)_translateY(-3px)]',
+    backOne: 'left-[-8px] right-1 -top-2 bottom-[-4px] rotate-[-2.6deg]',
+    backTwo: 'left-[-3px] right-1 -top-1 bottom-[-2px] rotate-[1.7deg]',
+    shape: '[border-radius:18px_24px_20px_22px]',
+  },
+  {
+    front: '[transform:rotate(-0.8deg)_translateY(3px)]',
+    backOne: 'left-1 right-[-9px] -top-2 bottom-[-4px] rotate-[2deg]',
+    backTwo: 'left-[-4px] right-1 -top-1 bottom-[-2px] rotate-[-2.4deg]',
+    shape: '[border-radius:22px_20px_25px_17px]',
+  },
+  {
+    front: '[transform:rotate(1.55deg)_translateY(5px)]',
+    backOne: 'left-[-8px] right-1 -top-2 bottom-[-4px] rotate-[-2.1deg]',
+    backTwo: 'left-[-3px] right-1 -top-1 bottom-[-2px] rotate-[2.3deg]',
+    shape: '[border-radius:20px_26px_18px_23px]',
+  },
+] as const
+
 function ModelCardStack(props: ModelCardStackProps) {
   const shouldReduceMotion = useReducedMotion()
   const [activeIndex, setActiveIndex] = useState(0)
   const activeModel = props.models[activeIndex % props.models.length]
+  const variant = STACK_VARIANTS[props.stackIndex % STACK_VARIANTS.length]
 
   if (!activeModel) {
     return null
@@ -153,60 +184,76 @@ function ModelCardStack(props: ModelCardStackProps) {
     >
       <div
         aria-hidden
-        className='bg-card/75 pointer-events-none absolute inset-x-2 top-2 bottom-1 z-0 rotate-[-1.4deg] rounded-[20px] border shadow-sm'
+        className={cn(
+          'bg-card/75 pointer-events-none absolute z-0 rounded-[20px] border shadow-sm',
+          variant.backOne
+        )}
       />
       <div
         aria-hidden
-        className='bg-card/90 pointer-events-none absolute inset-x-1 top-0.5 bottom-0.5 z-0 rotate-[1deg] rounded-[20px] border shadow-sm'
+        className={cn(
+          'bg-card/90 pointer-events-none absolute z-0 rounded-[20px] border shadow-sm',
+          variant.backTwo
+        )}
       />
 
       <AnimatePresence initial={false} mode='popLayout'>
-        <motion.div
-          key={activeModel.id ?? activeModel.model_name}
-          className='relative z-10 transform-gpu'
-          data-model-stack-card
-          initial={
-            shouldReduceMotion
-              ? { opacity: 1 }
-              : { opacity: 0, rotate: -1.5, scale: 0.96, y: 10, zIndex: 5 }
-          }
-          animate={{ opacity: 1, rotate: 0, scale: 1, x: 0, y: 0, zIndex: 10 }}
-          exit={
-            shouldReduceMotion
-              ? { opacity: 0 }
-              : {
-                  opacity: 0,
-                  rotate: 7,
-                  scale: 0.97,
-                  x: 88,
-                  y: -18,
-                  zIndex: 20,
-                }
-          }
-          transition={
-            shouldReduceMotion
-              ? { duration: 0 }
-              : { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
-          }
-        >
-          <ModelCard
-            model={activeModel}
-            tokenUnit={props.tokenUnit}
-            priceRate={props.priceRate}
-            usdExchangeRate={props.usdExchangeRate}
-            showRechargePrice={props.showRechargePrice}
-            selectedGroup={props.selectedGroup}
-            onClick={() => props.onModelClick(activeModel.model_name || '')}
-            onAdvance={
-              props.models.length > 1
-                ? () =>
-                    setActiveIndex(
-                      (current) => (current + 1) % props.models.length
-                    )
-                : undefined
+        <div className={cn('relative z-10', variant.front)}>
+          <motion.div
+            key={activeModel.id ?? activeModel.model_name}
+            className='relative transform-gpu'
+            data-model-stack-card
+            initial={
+              shouldReduceMotion
+                ? { opacity: 1 }
+                : { opacity: 0, rotate: -1.5, scale: 0.96, y: 10, zIndex: 5 }
             }
-          />
-        </motion.div>
+            animate={{
+              opacity: 1,
+              rotate: 0,
+              scale: 1,
+              x: 0,
+              y: 0,
+              zIndex: 10,
+            }}
+            exit={
+              shouldReduceMotion
+                ? { opacity: 0 }
+                : {
+                    opacity: 0,
+                    rotate: 7,
+                    scale: 0.97,
+                    x: 88,
+                    y: -18,
+                    zIndex: 20,
+                  }
+            }
+            transition={
+              shouldReduceMotion
+                ? { duration: 0 }
+                : { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
+            }
+          >
+            <ModelCard
+              model={activeModel}
+              tokenUnit={props.tokenUnit}
+              priceRate={props.priceRate}
+              usdExchangeRate={props.usdExchangeRate}
+              showRechargePrice={props.showRechargePrice}
+              selectedGroup={props.selectedGroup}
+              shapeClassName={variant.shape}
+              onClick={() => props.onModelClick(activeModel.model_name || '')}
+              onAdvance={
+                props.models.length > 1
+                  ? () =>
+                      setActiveIndex(
+                        (current) => (current + 1) % props.models.length
+                      )
+                  : undefined
+              }
+            />
+          </motion.div>
+        </div>
       </AnimatePresence>
     </div>
   )

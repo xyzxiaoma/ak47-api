@@ -43,6 +43,7 @@ export interface ModelCardProps {
   showRechargePrice?: boolean
   selectedGroup?: string
   onAdvance?: () => void
+  shapeClassName?: string
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -237,7 +238,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   return (
     <div
       className={cn(
-        'group relative isolate overflow-hidden rounded-[20px] border bg-card/95 p-4 shadow-[0_14px_35px_-28px_hsl(var(--foreground)/0.5)] transition-all',
+        'group relative isolate overflow-hidden border bg-card/95 p-4 shadow-[0_14px_35px_-28px_hsl(var(--foreground)/0.5)] transition-all',
+        props.shapeClassName || 'rounded-[20px]',
         'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_18px_38px_-24px_hsl(var(--foreground)/0.55)]',
         props.onAdvance && 'cursor-pointer'
       )}
@@ -247,7 +249,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           type='button'
           aria-label={props.model.model_name}
           onClick={props.onAdvance}
-          className='focus-visible:ring-ring absolute inset-0 z-0 rounded-2xl focus-visible:ring-2 focus-visible:outline-none'
+          className={cn(
+            'focus-visible:ring-ring absolute inset-0 z-0 focus-visible:ring-2 focus-visible:outline-none',
+            props.shapeClassName || 'rounded-2xl'
+          )}
         />
       )}
       <div className='pointer-events-none relative z-10 flex min-w-0 flex-col'>
