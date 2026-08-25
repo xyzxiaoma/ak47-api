@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -139,36 +139,143 @@ interface ModelCardStackProps {
   selectedGroup?: string
 }
 
+interface StackMotionPosition {
+  opacity: number
+  rotate: number
+  scale: number
+  x: number
+  y: number
+  zIndex: number
+}
+
+interface StackVariant {
+  front: StackMotionPosition
+  backOne: StackMotionPosition
+  backTwo: StackMotionPosition
+  exit: StackMotionPosition
+  shape: string
+}
+
 const STACK_VARIANTS = [
   {
-    front: '[transform:rotate(-1.35deg)_translateY(4px)]',
-    backOne: 'left-1 right-[-10px] -top-2 bottom-[-4px] rotate-[2.4deg]',
-    backTwo: 'left-[-4px] right-1 -top-1 bottom-[-2px] rotate-[-1.8deg]',
+    front: { opacity: 1, rotate: -1.35, scale: 1, x: 0, y: 4, zIndex: 30 },
+    backOne: {
+      opacity: 1,
+      rotate: 2.4,
+      scale: 0.985,
+      x: 6,
+      y: -4,
+      zIndex: 20,
+    },
+    backTwo: {
+      opacity: 0.94,
+      rotate: -1.8,
+      scale: 0.97,
+      x: -4,
+      y: -1,
+      zIndex: 10,
+    },
+    exit: {
+      opacity: 0,
+      rotate: 9,
+      scale: 0.96,
+      x: 104,
+      y: -30,
+      zIndex: 40,
+    },
     shape: '[border-radius:24px_18px_22px_20px]',
   },
   {
-    front: '[transform:rotate(1.1deg)_translateY(-3px)]',
-    backOne: 'left-[-8px] right-1 -top-2 bottom-[-4px] rotate-[-2.6deg]',
-    backTwo: 'left-[-3px] right-1 -top-1 bottom-[-2px] rotate-[1.7deg]',
+    front: { opacity: 1, rotate: 1.1, scale: 1, x: 0, y: -3, zIndex: 30 },
+    backOne: {
+      opacity: 1,
+      rotate: -2.6,
+      scale: 0.985,
+      x: -6,
+      y: -4,
+      zIndex: 20,
+    },
+    backTwo: {
+      opacity: 0.94,
+      rotate: 1.7,
+      scale: 0.97,
+      x: -3,
+      y: -1,
+      zIndex: 10,
+    },
+    exit: {
+      opacity: 0,
+      rotate: -9,
+      scale: 0.96,
+      x: -104,
+      y: -30,
+      zIndex: 40,
+    },
     shape: '[border-radius:18px_24px_20px_22px]',
   },
   {
-    front: '[transform:rotate(-0.8deg)_translateY(3px)]',
-    backOne: 'left-1 right-[-9px] -top-2 bottom-[-4px] rotate-[2deg]',
-    backTwo: 'left-[-4px] right-1 -top-1 bottom-[-2px] rotate-[-2.4deg]',
+    front: { opacity: 1, rotate: -0.8, scale: 1, x: 0, y: 3, zIndex: 30 },
+    backOne: {
+      opacity: 1,
+      rotate: 2,
+      scale: 0.985,
+      x: 6,
+      y: -4,
+      zIndex: 20,
+    },
+    backTwo: {
+      opacity: 0.94,
+      rotate: -2.4,
+      scale: 0.97,
+      x: -4,
+      y: -1,
+      zIndex: 10,
+    },
+    exit: {
+      opacity: 0,
+      rotate: 8,
+      scale: 0.96,
+      x: 104,
+      y: -30,
+      zIndex: 40,
+    },
     shape: '[border-radius:22px_20px_25px_17px]',
   },
   {
-    front: '[transform:rotate(1.55deg)_translateY(5px)]',
-    backOne: 'left-[-8px] right-1 -top-2 bottom-[-4px] rotate-[-2.1deg]',
-    backTwo: 'left-[-3px] right-1 -top-1 bottom-[-2px] rotate-[2.3deg]',
+    front: { opacity: 1, rotate: 1.55, scale: 1, x: 0, y: 5, zIndex: 30 },
+    backOne: {
+      opacity: 1,
+      rotate: -2.1,
+      scale: 0.985,
+      x: -6,
+      y: -4,
+      zIndex: 20,
+    },
+    backTwo: {
+      opacity: 0.94,
+      rotate: 2.3,
+      scale: 0.97,
+      x: -3,
+      y: -1,
+      zIndex: 10,
+    },
+    exit: {
+      opacity: 0,
+      rotate: -10,
+      scale: 0.96,
+      x: -104,
+      y: -30,
+      zIndex: 40,
+    },
     shape: '[border-radius:20px_26px_18px_23px]',
   },
-] as const
+] satisfies readonly StackVariant[]
 
 function ModelCardStack(props: ModelCardStackProps) {
   const shouldReduceMotion = useReducedMotion()
   const [activeIndex, setActiveIndex] = useState(0)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const animationLockRef = useRef(false)
   const activeModel = props.models[activeIndex % props.models.length]
   const variant = STACK_VARIANTS[props.stackIndex % STACK_VARIANTS.length]
 
@@ -176,84 +283,116 @@ function ModelCardStack(props: ModelCardStackProps) {
     return null
   }
 
+  const layerCount = Math.min(props.models.length, isAnimating ? 4 : 3)
+  const visibleLayers = Array.from({ length: layerCount }, (_, depth) => ({
+    depth,
+    model: props.models[(activeIndex + depth) % props.models.length],
+  }))
+
+  const advanceStack = () => {
+    if (animationLockRef.current || props.models.length <= 1) {
+      return
+    }
+
+    if (shouldReduceMotion) {
+      setActiveIndex((current) => (current + 1) % props.models.length)
+      return
+    }
+
+    animationLockRef.current = true
+    setIsAnimating(true)
+  }
+
+  const finishAdvance = () => {
+    if (!animationLockRef.current) {
+      return
+    }
+
+    setActiveIndex((current) => (current + 1) % props.models.length)
+    setIsAnimating(false)
+    animationLockRef.current = false
+  }
+
   return (
     <div
       className='relative isolate min-w-0 px-1 pt-1 pb-2 [perspective:1200px]'
       data-model-stack={props.groupName}
       aria-live='polite'
+      aria-busy={isAnimating}
     >
-      <div
-        aria-hidden
-        className={cn(
-          'bg-card/75 pointer-events-none absolute z-0 rounded-[20px] border shadow-sm',
-          variant.backOne
-        )}
-      />
-      <div
-        aria-hidden
-        className={cn(
-          'bg-card/90 pointer-events-none absolute z-0 rounded-[20px] border shadow-sm',
-          variant.backTwo
-        )}
-      />
+      <AnimatePresence initial={false}>
+        {visibleLayers.map(({ depth, model }) => {
+          const isFront = depth === 0
+          const isLayerInert = isAnimating || !isFront
+          let target = variant.front
 
-      <AnimatePresence initial={false} mode='popLayout'>
-        <div className={cn('relative z-10', variant.front)}>
-          <motion.div
-            key={activeModel.id ?? activeModel.model_name}
-            className='relative transform-gpu'
-            data-model-stack-card
-            initial={
-              shouldReduceMotion
-                ? { opacity: 1 }
-                : { opacity: 0, rotate: -1.5, scale: 0.96, y: 10, zIndex: 5 }
+          if (isAnimating) {
+            if (depth === 0) {
+              target = variant.exit
+            } else if (depth === 1) {
+              target = variant.front
+            } else if (depth === 2) {
+              target = variant.backOne
+            } else {
+              target = variant.backTwo
             }
-            animate={{
-              opacity: 1,
-              rotate: 0,
-              scale: 1,
-              x: 0,
-              y: 0,
-              zIndex: 10,
-            }}
-            exit={
-              shouldReduceMotion
-                ? { opacity: 0 }
-                : {
-                    opacity: 0,
-                    rotate: 7,
-                    scale: 0.97,
-                    x: 88,
-                    y: -18,
-                    zIndex: 20,
-                  }
-            }
-            transition={
-              shouldReduceMotion
-                ? { duration: 0 }
-                : { duration: 0.34, ease: [0.22, 1, 0.36, 1] }
-            }
-          >
-            <ModelCard
-              model={activeModel}
-              tokenUnit={props.tokenUnit}
-              priceRate={props.priceRate}
-              usdExchangeRate={props.usdExchangeRate}
-              showRechargePrice={props.showRechargePrice}
-              selectedGroup={props.selectedGroup}
-              shapeClassName={variant.shape}
-              onClick={() => props.onModelClick(activeModel.model_name || '')}
-              onAdvance={
-                props.models.length > 1
-                  ? () =>
-                      setActiveIndex(
-                        (current) => (current + 1) % props.models.length
-                      )
-                  : undefined
+          } else if (depth === 1) {
+            target = variant.backOne
+          } else if (depth === 2) {
+            target = variant.backTwo
+          }
+
+          return (
+            <motion.div
+              key={model.id ?? model.model_name}
+              className={cn(
+                'left-1 right-1 transform-gpu',
+                isFront ? 'relative' : 'pointer-events-none absolute top-1'
+              )}
+              data-model-stack-card={isFront ? '' : undefined}
+              aria-hidden={isLayerInert}
+              inert={isLayerInert}
+              initial={
+                shouldReduceMotion || depth < 3
+                  ? false
+                  : {
+                      ...variant.backTwo,
+                      opacity: 0,
+                      scale: variant.backTwo.scale - 0.02,
+                    }
               }
-            />
-          </motion.div>
-        </div>
+              animate={target}
+              exit={{ opacity: 0 }}
+              transition={
+                shouldReduceMotion
+                  ? { duration: 0 }
+                  : {
+                      duration: depth === 0 ? 0.38 : 0.32,
+                      ease: [0.22, 1, 0.36, 1],
+                    }
+              }
+              onAnimationComplete={
+                isAnimating && depth === 0 ? finishAdvance : undefined
+              }
+            >
+              <ModelCard
+                model={model}
+                tokenUnit={props.tokenUnit}
+                priceRate={props.priceRate}
+                usdExchangeRate={props.usdExchangeRate}
+                showRechargePrice={props.showRechargePrice}
+                selectedGroup={props.selectedGroup}
+                shapeClassName={variant.shape}
+                onClick={() => props.onModelClick(model.model_name || '')}
+                onAdvance={
+                  isFront && !isAnimating && props.models.length > 1
+                    ? advanceStack
+                    : undefined
+                }
+              />
+            </motion.div>
+          )
+        })}
       </AnimatePresence>
     </div>
   )
