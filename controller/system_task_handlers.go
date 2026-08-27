@@ -20,6 +20,7 @@ import (
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
+	service.RegisterSystemTaskHandler(pricingUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
 }
@@ -109,6 +110,40 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 	}
 	summary := runChannelUpstreamModelUpdateTaskOnce(ctx, payload.Manual, !payload.Manual, service.NewSystemTaskProgressReporter(task, runnerID))
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+// pricingUpdateHandler periodically refreshes the local model ratios from the
+// configured public upstream catalog. It intentionally does not touch model
+// group discounts, which remain an operator-owned setting.
+type pricingUpdateHandler struct{}
+
+func (pricingUpdateHandler) Type() string { return model.SystemTaskTypePricingUpdate }
+
+func (pricingUpdateHandler) Enabled() bool {
+	return common.GetEnvOrDefaultBool("UPSTREAM_PRICING_SYNC_TASK_ENABLED", true)
+}
+
+func (pricingUpdateHandler) Interval() time.Duration {
+	intervalMinutes := common.GetEnvOrDefault(
+		"UPSTREAM_PRICING_SYNC_TASK_INTERVAL_MINUTES",
+		upstreamPricingSyncTaskDefaultIntervalMinutes,
+	)
+	if intervalMinutes < 1 {
+		intervalMinutes = upstreamPricingSyncTaskDefaultIntervalMinutes
+	}
+	return time.Duration(intervalMinutes) * time.Minute
+}
+
+func (pricingUpdateHandler) NewPayload() any { return nil }
+
+func (pricingUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	result, err := runUpstreamPricingSync(ctx)
+	if err != nil {
+		common.SysLog(fmt.Sprintf("upstream pricing sync failed: url=%s err=%v", result.URL, err))
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, result, err)
+		return
+	}
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, result, nil)
 }
 
 // midjourneyPollHandler runs one Midjourney polling pass per scheduled run.
