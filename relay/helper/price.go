@@ -67,6 +67,14 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 
+	// 模型级覆盖是绝对有效折扣（例如 0.19 表示 1.9 折），替换当前分组倍率，
+	// 不再与分组倍率重复相乘。
+	if modelRatio, ok := ratio_setting.GetModelGroupRatio(relayInfo.OriginModelName); ok {
+		groupRatioInfo.GroupRatio = modelRatio
+		groupRatioInfo.GroupSpecialRatio = -1
+		groupRatioInfo.HasSpecialRatio = false
+	}
+
 	return groupRatioInfo
 }
 
@@ -74,6 +82,8 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	modelPrice, usePrice := ratio_setting.GetModelPrice(info.OriginModelName, false)
 
 	groupRatioInfo := HandleGroupRatio(c, info)
+	pricingGroupRatios := ratio_setting.GetEffectiveModelPricingGroupRatios(info.OriginModelName, groupRatioInfo.GroupRatio)
+	groupRatioInfo.GroupRatio = pricingGroupRatios.Input
 
 	// Check if this model uses tiered_expr billing
 	if billing_setting.GetBillingMode(info.OriginModelName) == billing_setting.BillingModeTieredExpr {
@@ -149,20 +159,23 @@ func ModelPriceHelper(c *gin.Context, info *relaycommon.RelayInfo, promptTokens 
 	}
 
 	priceData := hosttypes.PriceData{
-		FreeModel:            freeModel,
-		ModelPrice:           modelPrice,
-		ModelRatio:           modelRatio,
-		CompletionRatio:      completionRatio,
-		GroupRatioInfo:       groupRatioInfo,
-		UsePrice:             usePrice,
-		CacheRatio:           cacheRatio,
-		ImageRatio:           imageRatio,
-		AudioRatio:           audioRatio,
-		AudioCompletionRatio: audioCompletionRatio,
-		CacheCreationRatio:   cacheCreationRatio,
-		CacheCreation5mRatio: cacheCreationRatio5m,
-		CacheCreation1hRatio: cacheCreationRatio1h,
-		QuotaToPreConsume:    preConsumedQuota,
+		FreeModel:               freeModel,
+		ModelPrice:              modelPrice,
+		ModelRatio:              modelRatio,
+		CompletionRatio:         completionRatio,
+		GroupRatioInfo:          groupRatioInfo,
+		UsePrice:                usePrice,
+		CacheRatio:              cacheRatio,
+		ImageRatio:              imageRatio,
+		AudioRatio:              audioRatio,
+		AudioCompletionRatio:    audioCompletionRatio,
+		CompletionGroupRatio:    common.GetPointer(pricingGroupRatios.Completion),
+		CacheGroupRatio:         common.GetPointer(pricingGroupRatios.Cache),
+		CacheCreationGroupRatio: common.GetPointer(pricingGroupRatios.CreateCache),
+		CacheCreationRatio:      cacheCreationRatio,
+		CacheCreation5mRatio:    cacheCreationRatio5m,
+		CacheCreation1hRatio:    cacheCreationRatio1h,
+		QuotaToPreConsume:       preConsumedQuota,
 	}
 	if usePrice {
 		for name, ratio := range meta.BillingRatios {

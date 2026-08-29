@@ -14,22 +14,46 @@ type GroupRatioInfo struct {
 }
 
 type PriceData struct {
-	FreeModel            bool
-	ModelPrice           float64
-	ModelRatio           float64
-	CompletionRatio      float64
-	CacheRatio           float64
-	CacheCreationRatio   float64
-	CacheCreation5mRatio float64
-	CacheCreation1hRatio float64
-	ImageRatio           float64
-	AudioRatio           float64
-	AudioCompletionRatio float64
-	otherRatios          map[string]float64
-	UsePrice             bool
-	Quota                int // 按次计费的最终额度（MJ / Task）
-	QuotaToPreConsume    int // 按量计费的预消耗额度
-	GroupRatioInfo       GroupRatioInfo
+	FreeModel               bool
+	ModelPrice              float64
+	ModelRatio              float64
+	CompletionRatio         float64
+	CacheRatio              float64
+	CacheCreationRatio      float64
+	CacheCreation5mRatio    float64
+	CacheCreation1hRatio    float64
+	ImageRatio              float64
+	AudioRatio              float64
+	AudioCompletionRatio    float64
+	CompletionGroupRatio    *float64
+	CacheGroupRatio         *float64
+	CacheCreationGroupRatio *float64
+	otherRatios             map[string]float64
+	UsePrice                bool
+	Quota                   int // 按次计费的最终额度（MJ / Task）
+	QuotaToPreConsume       int // 按量计费的预消耗额度
+	GroupRatioInfo          GroupRatioInfo
+}
+
+func (p *PriceData) EffectiveCompletionGroupRatio() float64 {
+	if p.CompletionGroupRatio != nil {
+		return *p.CompletionGroupRatio
+	}
+	return p.GroupRatioInfo.GroupRatio
+}
+
+func (p *PriceData) EffectiveCacheGroupRatio() float64 {
+	if p.CacheGroupRatio != nil {
+		return *p.CacheGroupRatio
+	}
+	return p.GroupRatioInfo.GroupRatio
+}
+
+func (p *PriceData) EffectiveCacheCreationGroupRatio() float64 {
+	if p.CacheCreationGroupRatio != nil {
+		return *p.CacheCreationGroupRatio
+	}
+	return p.GroupRatioInfo.GroupRatio
 }
 
 func (p *PriceData) AddOtherRatio(key string, ratio float64) {

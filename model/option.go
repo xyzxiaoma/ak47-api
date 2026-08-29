@@ -146,6 +146,10 @@ func InitOptionMap() {
 	common.OptionMap["CreateCacheRatio"] = ratio_setting.CreateCacheRatio2JSONString()
 	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
 	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
+	common.OptionMap["ModelGroupRatio"] = ratio_setting.ModelGroupRatio2JSONString()
+	common.OptionMap["ModelCompletionGroupRatio"] = ratio_setting.ModelCompletionGroupRatio2JSONString()
+	common.OptionMap["ModelCacheGroupRatio"] = ratio_setting.ModelCacheGroupRatio2JSONString()
+	common.OptionMap["ModelCreateCacheGroupRatio"] = ratio_setting.ModelCreateCacheGroupRatio2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
 	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
 	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
@@ -211,6 +215,9 @@ func validateOptionValue(key string, value string) error {
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
+	}
+	if key == "ModelGroupRatio" || key == "ModelCompletionGroupRatio" || key == "ModelCacheGroupRatio" || key == "ModelCreateCacheGroupRatio" {
+		return ratio_setting.CheckModelGroupRatio(value)
 	}
 	return nil
 }
@@ -557,6 +564,14 @@ func updateOptionMap(key string, value string) (err error) {
 		err = ratio_setting.UpdateGroupRatioByJSONString(value)
 	case "GroupGroupRatio":
 		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
+	case "ModelGroupRatio":
+		err = ratio_setting.UpdateModelGroupRatioByJSONString(value)
+	case "ModelCompletionGroupRatio":
+		err = ratio_setting.UpdateModelCompletionGroupRatioByJSONString(value)
+	case "ModelCacheGroupRatio":
+		err = ratio_setting.UpdateModelCacheGroupRatioByJSONString(value)
+	case "ModelCreateCacheGroupRatio":
+		err = ratio_setting.UpdateModelCreateCacheGroupRatioByJSONString(value)
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
 	case "CompletionRatio":

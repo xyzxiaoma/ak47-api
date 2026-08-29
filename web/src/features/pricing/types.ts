@@ -38,6 +38,10 @@ export type PricingModel = {
   vendor_description?: string
   quota_type: number
   model_ratio: number
+  model_group_ratio?: number
+  model_completion_group_ratio?: number
+  model_cache_group_ratio?: number
+  model_create_cache_group_ratio?: number
   completion_ratio: number
   model_price?: number
   cache_ratio?: number | null
@@ -94,6 +98,10 @@ export type PricingData = {
   data: PricingModel[]
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
+  model_group_ratio?: Record<string, number>
+  model_completion_group_ratio?: Record<string, number>
+  model_cache_group_ratio?: Record<string, number>
+  model_create_cache_group_ratio?: Record<string, number>
   usable_group: Record<string, { desc: string; ratio: number }>
   supported_endpoint: Record<string, string>
   auto_groups: string[]

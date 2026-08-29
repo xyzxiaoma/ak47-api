@@ -58,6 +58,13 @@ export function usePricingData() {
         vendor_icon: vendor?.icon,
         vendor_description: vendor?.description,
         group_ratio: data.group_ratio,
+        model_group_ratio: data.model_group_ratio?.[model.model_name],
+        model_completion_group_ratio:
+          data.model_completion_group_ratio?.[model.model_name],
+        model_cache_group_ratio:
+          data.model_cache_group_ratio?.[model.model_name],
+        model_create_cache_group_ratio:
+          data.model_create_cache_group_ratio?.[model.model_name],
       }
     })
   }, [data])

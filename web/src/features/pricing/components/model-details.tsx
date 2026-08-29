@@ -67,7 +67,11 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getAvailableGroups,
+  getOriginalPricingModel,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   ModelCapability,
@@ -578,6 +582,7 @@ function PriceSection(props: {
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
   const baseGroupKey = '_base'
   const baseGroupRatioMap = { [baseGroupKey]: 1 }
+  const originalPriceModel = getOriginalPricingModel(props.model)
   const dynamicSummary = getDynamicPricingSummary(props.model, {
     tokenUnit: props.tokenUnit,
     showRechargePrice: props.showRechargePrice,
@@ -712,7 +717,7 @@ function PriceSection(props: {
           </span>
           <span className='text-foreground font-mono text-sm font-semibold tabular-nums'>
             {formatFixedPrice(
-              props.model,
+              originalPriceModel,
               baseGroupKey,
               props.showRechargePrice,
               props.priceRate,
@@ -729,7 +734,7 @@ function PriceSection(props: {
   const renderPrice = (type: PriceType) => (
     <>
       {formatGroupPrice(
-        props.model,
+        originalPriceModel,
         baseGroupKey,
         type,
         props.tokenUnit,

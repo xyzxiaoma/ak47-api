@@ -272,3 +272,30 @@ func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T)
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
 	require.Nil(t, info.Billing)
 }
+
+func TestModelPriceHelperUsesAbsoluteModelGroupRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	savedModelRatios := ratio_setting.ModelRatio2JSONString()
+	savedModelGroupRatios := ratio_setting.ModelGroupRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedModelRatios))
+		require.NoError(t, ratio_setting.UpdateModelGroupRatioByJSONString(savedModelGroupRatios))
+	})
+
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"glm-5.2":4}`))
+	require.NoError(t, ratio_setting.UpdateModelGroupRatioByJSONString(`{"glm-5.2":0.28}`))
+
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("group", "glm")
+	info := &relaycommon.RelayInfo{
+		OriginModelName: "glm-5.2",
+		UserGroup:       "glm",
+		UsingGroup:      "glm",
+	}
+
+	priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+	require.NoError(t, err)
+	require.Equal(t, 4.0, priceData.ModelRatio)
+	require.Equal(t, 0.28, priceData.GroupRatioInfo.GroupRatio)
+	require.Equal(t, 1120, priceData.QuotaToPreConsume)
+}

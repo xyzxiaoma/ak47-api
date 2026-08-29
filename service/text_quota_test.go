@@ -114,6 +114,39 @@ func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.
 	require.Equal(t, 118, summary.Quota)
 }
 
+func TestCalculateTextQuotaSummaryUsesPerItemModelGroupRatios(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "deepseek-v4-pro",
+		PriceData: hosttypes.PriceData{
+			ModelRatio:              1,
+			CompletionRatio:         3,
+			CacheRatio:              0.1,
+			CacheCreationRatio:      0.2,
+			CompletionGroupRatio:    common.GetPointer(0.4),
+			CacheGroupRatio:         common.GetPointer(0.7),
+			CacheCreationGroupRatio: common.GetPointer(0.5),
+			GroupRatioInfo:          hosttypes.GroupRatioInfo{GroupRatio: 0.3},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         200,
+			CachedCreationTokens: 100,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	// input 700*0.3 + output 100*3*0.4 + cache 200*0.1*0.7
+	// + cache-write 100*0.2*0.5 = 354.
+	require.Equal(t, 354, summary.Quota)
+}
+
 func TestCalculateTextQuotaSummaryUsesAnthropicUsageSemanticFromUpstreamUsage(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

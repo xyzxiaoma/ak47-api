@@ -39,33 +39,36 @@ func appendToolSurchargeLogInfo(other map[string]interface{}, items []ToolSurcha
 }
 
 type textQuotaSummary struct {
-	PromptTokens           int
-	CompletionTokens       int
-	TotalTokens            int
-	CacheTokens            int
-	CacheCreationTokens    int
-	CacheCreationTokens5m  int
-	CacheCreationTokens1h  int
-	ImageTokens            int
-	AudioTokens            int
-	ModelName              string
-	TokenName              string
-	UseTimeSeconds         int64
-	CompletionRatio        float64
-	CacheRatio             float64
-	ImageRatio             float64
-	ModelRatio             float64
-	GroupRatio             float64
-	ModelPrice             float64
-	CacheCreationRatio     float64
-	CacheCreationRatio5m   float64
-	CacheCreationRatio1h   float64
-	Quota                  int
-	IsClaudeUsageSemantic  bool
-	UsageSemantic          string
-	AudioInputPrice        float64
-	ToolSurchargeItems     []ToolSurchargeItem
-	ToolCallSurchargeQuota decimal.Decimal
+	PromptTokens            int
+	CompletionTokens        int
+	TotalTokens             int
+	CacheTokens             int
+	CacheCreationTokens     int
+	CacheCreationTokens5m   int
+	CacheCreationTokens1h   int
+	ImageTokens             int
+	AudioTokens             int
+	ModelName               string
+	TokenName               string
+	UseTimeSeconds          int64
+	CompletionRatio         float64
+	CacheRatio              float64
+	ImageRatio              float64
+	ModelRatio              float64
+	GroupRatio              float64
+	CompletionGroupRatio    float64
+	CacheGroupRatio         float64
+	CacheCreationGroupRatio float64
+	ModelPrice              float64
+	CacheCreationRatio      float64
+	CacheCreationRatio5m    float64
+	CacheCreationRatio1h    float64
+	Quota                   int
+	IsClaudeUsageSemantic   bool
+	UsageSemantic           string
+	AudioInputPrice         float64
+	ToolSurchargeItems      []ToolSurchargeItem
+	ToolCallSurchargeQuota  decimal.Decimal
 }
 
 // hasBillableUsage reports whether this request should incur any charge.
@@ -230,19 +233,22 @@ func composeTieredTextQuota(relayInfo *relaycommon.RelayInfo, summary textQuotaS
 // the result with tiered billing, affinity observation and logging.
 func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) textQuotaSummary {
 	summary := textQuotaSummary{
-		ModelName:            relayInfo.OriginModelName,
-		TokenName:            ctx.GetString("token_name"),
-		UseTimeSeconds:       time.Now().Unix() - relayInfo.StartTime.Unix(),
-		CompletionRatio:      relayInfo.PriceData.CompletionRatio,
-		CacheRatio:           relayInfo.PriceData.CacheRatio,
-		ImageRatio:           relayInfo.PriceData.ImageRatio,
-		ModelRatio:           relayInfo.PriceData.ModelRatio,
-		GroupRatio:           relayInfo.PriceData.GroupRatioInfo.GroupRatio,
-		ModelPrice:           relayInfo.PriceData.ModelPrice,
-		CacheCreationRatio:   relayInfo.PriceData.CacheCreationRatio,
-		CacheCreationRatio5m: relayInfo.PriceData.CacheCreation5mRatio,
-		CacheCreationRatio1h: relayInfo.PriceData.CacheCreation1hRatio,
-		UsageSemantic:        usageSemanticFromUsage(relayInfo, usage),
+		ModelName:               relayInfo.OriginModelName,
+		TokenName:               ctx.GetString("token_name"),
+		UseTimeSeconds:          time.Now().Unix() - relayInfo.StartTime.Unix(),
+		CompletionRatio:         relayInfo.PriceData.CompletionRatio,
+		CacheRatio:              relayInfo.PriceData.CacheRatio,
+		ImageRatio:              relayInfo.PriceData.ImageRatio,
+		ModelRatio:              relayInfo.PriceData.ModelRatio,
+		GroupRatio:              relayInfo.PriceData.GroupRatioInfo.GroupRatio,
+		CompletionGroupRatio:    relayInfo.PriceData.EffectiveCompletionGroupRatio(),
+		CacheGroupRatio:         relayInfo.PriceData.EffectiveCacheGroupRatio(),
+		CacheCreationGroupRatio: relayInfo.PriceData.EffectiveCacheCreationGroupRatio(),
+		ModelPrice:              relayInfo.PriceData.ModelPrice,
+		CacheCreationRatio:      relayInfo.PriceData.CacheCreationRatio,
+		CacheCreationRatio5m:    relayInfo.PriceData.CacheCreation5mRatio,
+		CacheCreationRatio1h:    relayInfo.PriceData.CacheCreation1hRatio,
+		UsageSemantic:           usageSemanticFromUsage(relayInfo, usage),
 	}
 	summary.IsClaudeUsageSemantic = summary.UsageSemantic == "anthropic"
 
@@ -291,13 +297,17 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	dImageRatio := decimal.NewFromFloat(summary.ImageRatio)
 	dModelRatio := decimal.NewFromFloat(summary.ModelRatio)
 	dGroupRatio := decimal.NewFromFloat(summary.GroupRatio)
+	dCompletionGroupRatio := decimal.NewFromFloat(summary.CompletionGroupRatio)
+	dCacheGroupRatio := decimal.NewFromFloat(summary.CacheGroupRatio)
+	dCacheCreationGroupRatio := decimal.NewFromFloat(summary.CacheCreationGroupRatio)
 	dModelPrice := decimal.NewFromFloat(summary.ModelPrice)
 	dCacheCreationRatio := decimal.NewFromFloat(summary.CacheCreationRatio)
 	dCacheCreationRatio5m := decimal.NewFromFloat(summary.CacheCreationRatio5m)
 	dCacheCreationRatio1h := decimal.NewFromFloat(summary.CacheCreationRatio1h)
 	dQuotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
 
-	ratio := dModelRatio.Mul(dGroupRatio)
+	hasTokenBillingRatio := !dModelRatio.IsZero() &&
+		(!dGroupRatio.IsZero() || !dCompletionGroupRatio.IsZero() || !dCacheGroupRatio.IsZero() || !dCacheCreationGroupRatio.IsZero())
 	summary.ToolCallSurchargeQuota = calculateTextToolCallSurcharge(ctx, relayInfo, &summary)
 
 	var audioInputQuota decimal.Decimal
@@ -352,14 +362,16 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			baseTokens = decimal.Zero
 		}
 
-		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cachedCreationTokensWithRatio)
-		completionQuota := dCompletionTokens.Mul(dCompletionRatio)
-		quotaCalculateDecimal := promptQuota.Add(completionQuota).Mul(ratio)
+		inputQuota := baseTokens.Add(imageTokensWithRatio).Mul(dGroupRatio)
+		cacheQuota := cachedTokensWithRatio.Mul(dCacheGroupRatio)
+		cacheCreationQuota := cachedCreationTokensWithRatio.Mul(dCacheCreationGroupRatio)
+		completionQuota := dCompletionTokens.Mul(dCompletionRatio).Mul(dCompletionGroupRatio)
+		quotaCalculateDecimal := inputQuota.Add(cacheQuota).Add(cacheCreationQuota).Add(completionQuota).Mul(dModelRatio)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(audioInputQuota)
 		quotaCalculateDecimal = relayInfo.PriceData.ApplyOtherRatiosToDecimal(quotaCalculateDecimal)
 		quotaCalculateDecimal = quotaCalculateDecimal.Add(summary.ToolCallSurchargeQuota)
 
-		if !ratio.IsZero() && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
+		if hasTokenBillingRatio && quotaCalculateDecimal.LessThanOrEqual(decimal.Zero) {
 			quotaCalculateDecimal = decimal.NewFromInt(1)
 		}
 		quota, clamp := common.QuotaFromDecimalChecked(quotaCalculateDecimal)
@@ -377,11 +389,17 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 
 	if !summary.hasBillableUsage() {
 		summary.Quota = 0
-	} else if !ratio.IsZero() && summary.Quota == 0 {
+	} else if hasTokenBillingRatio && summary.Quota == 0 {
 		summary.Quota = 1
 	}
 
 	return summary
+}
+
+// CalculateTextQuotaForChannelTest reuses the production text settlement
+// calculation so channel-test audit logs cannot drift from live billing.
+func CalculateTextQuotaForChannelTest(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) int {
+	return calculateTextQuotaSummary(ctx, relayInfo, usage).Quota
 }
 
 func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) string {

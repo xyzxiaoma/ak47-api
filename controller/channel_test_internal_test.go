@@ -307,6 +307,8 @@ func TestDeleteChannelBatchReportsAndAuditsActualDeletedCount(t *testing.T) {
 }
 
 func TestSettleTestQuotaUsesTieredBilling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	info := &relaycommon.RelayInfo{
 		TieredBillingSnapshot: &billingexpr.BillingSnapshot{
 			BillingMode:   "tiered_expr",
@@ -322,7 +324,7 @@ func TestSettleTestQuotaUsesTieredBilling(t *testing.T) {
 		},
 	}
 
-	quota, result := settleTestQuota(info, types.PriceData{
+	quota, result := settleTestQuota(ctx, info, types.PriceData{
 		ModelRatio:      1,
 		CompletionRatio: 2,
 	}, &dto.Usage{
@@ -332,6 +334,35 @@ func TestSettleTestQuotaUsesTieredBilling(t *testing.T) {
 	require.Equal(t, 1500, quota)
 	require.NotNil(t, result)
 	require.Equal(t, "stream", result.MatchedTier)
+}
+
+func TestSettleTestQuotaUsesPerItemModelGroupRatios(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	priceData := types.PriceData{
+		ModelRatio:              1,
+		CompletionRatio:         3,
+		CacheRatio:              0.1,
+		CacheCreationRatio:      0.2,
+		CompletionGroupRatio:    common.GetPointer(0.4),
+		CacheGroupRatio:         common.GetPointer(0.7),
+		CacheCreationGroupRatio: common.GetPointer(0.5),
+		GroupRatioInfo:          types.GroupRatioInfo{GroupRatio: 0.3},
+	}
+	info := &relaycommon.RelayInfo{OriginModelName: "deepseek-v4-pro", PriceData: priceData}
+	usage := &dto.Usage{
+		PromptTokens:     1000,
+		CompletionTokens: 100,
+		PromptTokensDetails: dto.InputTokenDetails{
+			CachedTokens:         200,
+			CachedCreationTokens: 100,
+		},
+	}
+
+	quota, result := settleTestQuota(ctx, info, priceData, usage)
+
+	require.Nil(t, result)
+	require.Equal(t, 354, quota)
 }
 
 func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
@@ -346,7 +377,10 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 		ChannelMeta: &relaycommon.ChannelMeta{},
 	}
 	priceData := types.PriceData{
-		GroupRatioInfo: types.GroupRatioInfo{GroupRatio: 1},
+		GroupRatioInfo:          types.GroupRatioInfo{GroupRatio: 1},
+		CompletionGroupRatio:    common.GetPointer(0.4),
+		CacheGroupRatio:         common.GetPointer(0.7),
+		CacheCreationGroupRatio: common.GetPointer(0.5),
 	}
 	usage := &dto.Usage{
 		PromptTokensDetails: dto.InputTokenDetails{
@@ -360,6 +394,9 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 
 	require.Equal(t, "tiered_expr", other["billing_mode"])
 	require.Equal(t, "base", other["matched_tier"])
+	require.Equal(t, 0.4, other["completion_group_ratio"])
+	require.Equal(t, 0.7, other["cache_group_ratio"])
+	require.Equal(t, 0.5, other["cache_creation_group_ratio"])
 	require.NotEmpty(t, other["expr_b64"])
 }
 

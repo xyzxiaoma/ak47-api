@@ -30,7 +30,11 @@ import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
-import { getDisplayGroupRatio, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getDisplayGroupRatio,
+  getOriginalPricingModel,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 
@@ -82,11 +86,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const hasDiscount = displayGroupRatio < 1
   const discountLabel = `${formatDiscount(displayGroupRatio)}折`
   const primaryGroup = groups[0]
-  const originalPriceModel = {
-    ...props.model,
-    model_group_ratio: undefined,
-    group_ratio: Object.fromEntries(groups.map((group) => [group, 1])),
-  }
+  const originalPriceModel = getOriginalPricingModel(props.model)
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()

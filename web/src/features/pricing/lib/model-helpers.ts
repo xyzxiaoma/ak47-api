@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { EXCLUDED_GROUPS, FILTER_ALL, QUOTA_TYPE_VALUES } from '../constants'
-import type { PricingModel } from '../types'
+import type { PriceType, PricingModel } from '../types'
 
 // ----------------------------------------------------------------------------
 // Model Helper Utilities
@@ -50,6 +50,57 @@ export function getConfiguredGroupRatio(
   return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
 }
 
+export function getEffectiveModelGroupRatio(
+  model: PricingModel,
+  groupRatio: Record<string, number>,
+  group: string
+): number {
+  const modelRatio = model.model_group_ratio
+  if (typeof modelRatio === 'number' && Number.isFinite(modelRatio)) {
+    return modelRatio
+  }
+  return getConfiguredGroupRatio(groupRatio, group)
+}
+
+export function getEffectiveModelItemGroupRatio(
+  model: PricingModel,
+  type: PriceType,
+  fallback: number
+): number {
+  let ratio: number | undefined
+  switch (type) {
+    case 'output':
+    case 'audio_output':
+      ratio = model.model_completion_group_ratio
+      break
+    case 'cache':
+      ratio = model.model_cache_group_ratio
+      break
+    case 'create_cache':
+      ratio = model.model_create_cache_group_ratio
+      break
+    default:
+      ratio = undefined
+  }
+  return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : fallback
+}
+
+/**
+ * Build the pricing projection used for upstream/base-price displays.
+ * Model-level selling discounts must not leak into the original-price view.
+ */
+export function getOriginalPricingModel(model: PricingModel): PricingModel {
+  const groups = Array.isArray(model.enable_groups) ? model.enable_groups : []
+  return {
+    ...model,
+    model_group_ratio: undefined,
+    model_completion_group_ratio: undefined,
+    model_cache_group_ratio: undefined,
+    model_create_cache_group_ratio: undefined,
+    group_ratio: Object.fromEntries(groups.map((group) => [group, 1])),
+  }
+}
+
 /**
  * Resolve the group ratio used by model square summary prices.
  *
@@ -71,7 +122,7 @@ export function getDisplayGroupRatio(
     selectedGroup !== FILTER_ALL &&
     modelEnableGroups.includes(selectedGroup)
   ) {
-    return getConfiguredGroupRatio(groupRatio, selectedGroup)
+    return getEffectiveModelGroupRatio(model, groupRatio, selectedGroup)
   }
 
   if (modelEnableGroups.length === 0) {
@@ -81,7 +132,7 @@ export function getDisplayGroupRatio(
   let minRatio = Number.POSITIVE_INFINITY
 
   for (const group of modelEnableGroups) {
-    const ratio = groupRatio[group]
+    const ratio = getEffectiveModelGroupRatio(model, groupRatio, group)
     if (
       typeof ratio === 'number' &&
       Number.isFinite(ratio) &&
