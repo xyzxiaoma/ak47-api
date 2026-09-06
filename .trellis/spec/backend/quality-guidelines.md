@@ -123,6 +123,10 @@ Define the build-time value statically and keep URL validation in the shared acc
 - For time-of-day DeepSeek prices, use the top-level peak `original` and ignore `off_peak`.
 - For GLM, Kimi, DeepSeek, and Qwen, resolve input, output, cache-read, and cache-write selling ratios independently as `min(platform / original + 0.1, 1)`.
 - GPT synchronization updates original prices only and must preserve its existing selling discount configuration.
+- Optional `UPSTREAM_PRICING_SYNC_PRESERVE_DISCOUNT_MODELS` is a comma-separated,
+  whitespace-trimmed list of exact model IDs. It preserves all four selling
+  discount maps for those models (including absent overrides), but never skips
+  original-price updates. Unset means existing synchronization behavior.
 - Public/free models (including `free/ds-v4-flash`) and tiered models are excluded from the flat-price sync.
 - Persist original-price and four model-level selling-ratio option maps in one database transaction. Missing item overrides fall back to the model input override and then to the selected group ratio.
 - Text, realtime audio, channel-test settlement, consume logs, `/api/pricing`, and frontend original/discounted projections must share these ratio semantics.

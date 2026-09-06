@@ -113,8 +113,8 @@ func (modelUpdateHandler) Run(ctx context.Context, task *model.SystemTask, runne
 }
 
 // pricingUpdateHandler periodically refreshes the local model ratios from the
-// configured public upstream catalog. It intentionally does not touch model
-// group discounts, which remain an operator-owned setting.
+// configured public upstream catalog. Explicitly preserved models retain their
+// operator-owned discounts; other eligible models use the catalog markup policy.
 type pricingUpdateHandler struct{}
 
 func (pricingUpdateHandler) Type() string { return model.SystemTaskTypePricingUpdate }

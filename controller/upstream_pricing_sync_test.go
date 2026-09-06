@@ -11,6 +11,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMergeUpstreamPricingPreservesOnlySelectedDiscounts(t *testing.T) {
+	incoming := map[string]float64{"glm-5.2": 0.28, "kimi-k3": 0.28, "deepseek-v4-pro": 0.7, "qwen3.8-flash": 0.3}
+	preserved := []string{"glm-5.2", "kimi-k3", "deepseek-v4-pro"}
+	current := map[string]float64{"glm-5.2": 0.1, "deepseek-v4-pro": 0.1, "qwen3.8-flash": 0.2}
+	mergeFloatPricingMap(current, incoming, preserved...)
+	assert.Equal(t, map[string]float64{"glm-5.2": 0.1, "deepseek-v4-pro": 0.1, "qwen3.8-flash": 0.3}, current)
+	assert.NotContains(t, current, "kimi-k3", "preserve absent item override so normal fallback remains effective")
+	originalPrices := map[string]float64{"glm-5.2": 4}
+	mergeFloatPricingMap(originalPrices, map[string]float64{"glm-5.2": 5})
+	assert.Equal(t, 5.0, originalPrices["glm-5.2"], "original-price sync is not excluded")
+	unconfigured := map[string]float64{"glm-5.2": 0.1}
+	mergeFloatPricingMap(unconfigured, incoming)
+	assert.Equal(t, 0.28, unconfigured["glm-5.2"], "default synchronization policy remains unchanged")
+}
+
 func TestConvertUpstreamPricingCatalogUsesPeakOriginalPricesAndPerItemMarkups(t *testing.T) {
 	var catalog upstreamPricingCatalog
 	require.NoError(t, json.Unmarshal([]byte(`{

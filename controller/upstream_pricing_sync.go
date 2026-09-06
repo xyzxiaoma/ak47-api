@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -260,8 +261,11 @@ func convertUpstreamPricingCatalog(catalog upstreamPricingCatalog) (map[string]a
 	}, skipped, nil
 }
 
-func mergeFloatPricingMap(current map[string]float64, incoming any) {
+func mergeFloatPricingMap(current map[string]float64, incoming any, preservedModels ...string) {
 	for modelName, raw := range valueMap(incoming) {
+		if slices.Contains(preservedModels, modelName) {
+			continue
+		}
 		if value, ok := asFloat64(raw); ok && finiteNonNegative(value) {
 			current[modelName] = value
 		}
@@ -281,10 +285,15 @@ func persistUpstreamPricingData(data map[string]any) error {
 	mergeFloatPricingMap(completionRatios, data["completion_ratio"])
 	mergeFloatPricingMap(cacheRatios, data["cache_ratio"])
 	mergeFloatPricingMap(createCacheRatios, data["create_cache_ratio"])
-	mergeFloatPricingMap(modelGroupRatios, data["model_group_ratio"])
-	mergeFloatPricingMap(modelCompletionGroupRatios, data["model_completion_group_ratio"])
-	mergeFloatPricingMap(modelCacheGroupRatios, data["model_cache_group_ratio"])
-	mergeFloatPricingMap(modelCreateCacheGroupRatios, data["model_create_cache_group_ratio"])
+	// Operator-owned discounts can be fixed independently of original-price sync.
+	preservedDiscountModels := strings.Split(os.Getenv("UPSTREAM_PRICING_SYNC_PRESERVE_DISCOUNT_MODELS"), ",")
+	for i := range preservedDiscountModels {
+		preservedDiscountModels[i] = strings.TrimSpace(preservedDiscountModels[i])
+	}
+	mergeFloatPricingMap(modelGroupRatios, data["model_group_ratio"], preservedDiscountModels...)
+	mergeFloatPricingMap(modelCompletionGroupRatios, data["model_completion_group_ratio"], preservedDiscountModels...)
+	mergeFloatPricingMap(modelCacheGroupRatios, data["model_cache_group_ratio"], preservedDiscountModels...)
+	mergeFloatPricingMap(modelCreateCacheGroupRatios, data["model_create_cache_group_ratio"], preservedDiscountModels...)
 
 	marshal := func(value any) (string, error) {
 		encoded, err := common.Marshal(value)
