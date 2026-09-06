@@ -22,7 +22,6 @@ import { useTranslation } from 'react-i18next'
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
-import { cn } from '@/lib/utils'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
@@ -46,8 +45,6 @@ export interface ModelCardProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
-  onAdvance?: () => void
-  shapeClassName?: string
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -236,26 +233,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   }
 
   return (
-    <div
-      className={cn(
-        'group relative isolate overflow-hidden border bg-card/95 p-4 shadow-[0_14px_35px_-28px_hsl(var(--foreground)/0.5)] transition-all',
-        props.shapeClassName || 'rounded-[20px]',
-        'hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-[0_18px_38px_-24px_hsl(var(--foreground)/0.55)]',
-        props.onAdvance && 'cursor-pointer'
-      )}
-    >
-      {props.onAdvance && (
-        <button
-          type='button'
-          aria-label={props.model.model_name}
-          onClick={props.onAdvance}
-          className={cn(
-            'focus-visible:ring-ring absolute inset-0 z-0 focus-visible:ring-2 focus-visible:outline-none',
-            props.shapeClassName || 'rounded-2xl'
-          )}
-        />
-      )}
-      <div className='pointer-events-none relative z-10 flex min-w-0 flex-col'>
+    <div className='group bg-card/95 hover:border-foreground/20 relative h-full overflow-hidden rounded-[20px] border p-4 shadow-[0_14px_35px_-28px_hsl(var(--foreground)/0.5)] transition-all hover:-translate-y-0.5 hover:shadow-[0_18px_38px_-24px_hsl(var(--foreground)/0.55)]'>
+      <div className='relative flex min-w-0 flex-col'>
         <div className='flex items-start justify-between gap-2'>
           <div className='flex min-w-0 items-start gap-2.5'>
             <div className='bg-muted/40 flex size-10 shrink-0 items-center justify-center rounded-xl'>
