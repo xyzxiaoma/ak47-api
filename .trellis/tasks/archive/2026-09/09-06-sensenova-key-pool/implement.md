@@ -109,6 +109,18 @@ Confirm the work-commit plan before committing. Do not push. Archive/journal
 bookkeeping follows the work commit, not before it. Production release remains
 separate and requires the cutover checks above and a full operator key inventory.
 
-## Tooling note
+## Approved production activation — 2026-09-06
+
+After the application-only release, the operator separately authorized using the
+previously supplied key and disabling old GLM/Kimi/DeepSeek channels. Pool 15 is
+now enabled with one key; channels 4/5/6 and their abilities are disabled. Exact
+legacy-only IDs are not aliased. GLM and both DeepSeek models passed the actual
+gateway with one output token each. Kimi intermittently recovers via scheduled
+probe but still rate-limits; the operator explicitly accepted old Kimi remaining
+disabled. Prices and unrelated providers were preserved. See
+`docs/releases/2026-09-06-sensenova-activation.md` for `.2` probe fix, backup,
+source/image identity, verification and rollback evidence.
+
+## Tooling compatibility
 
 The normal `task.py create` invocation failed on the local Python parser in `common/task_context.py:240` before it created files. These artifacts were created with the canonical schema from `common/task_store.py`. Before using task activation/validation, use a compatible existing Python interpreter (prefer the remote development environment) or resolve the tooling issue in a separately scoped change. This task does not alter Trellis scripts.
