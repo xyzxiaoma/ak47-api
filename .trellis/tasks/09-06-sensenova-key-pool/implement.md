@@ -6,7 +6,7 @@
 - [x] Confirmed source repository and existing multi-key integration points.
 - [x] Recorded independent-account/API-key-only constraint and selected models.
 - [x] Drafted PRD, design, and source-backed research.
-- [ ] Review final implementation scope, especially migration of old-only model IDs before production cutover.
+- [x] Fix the application-only release scope; legacy model/channel cutover is a separate operator action, not part of this deployment.
 - [x] User explicitly approved implementation on 2026-09-06 (开始实现吧). The local task CLI remains parser-incompatible; task status was updated without altering the CLI.
 
 ## Implementation order
@@ -48,7 +48,10 @@ Run these on the configured development host, starting with new focused tests. E
 | Multiple failed attempts then success | No duplicate customer billing |
 | Status/API/log response | Masked identifiers and coarse safe reasons only |
 
-## Production handoff checklist
+## Separate provider-cutover handoff checklist
+
+The application was deployed on 2026-09-06 without activating a provider pool.
+The following operator steps remain for a separately approved routing cutover.
 
 - Resolve old-only model IDs without silently remapping them.
 - Inspect current running source/image and channel state again; previous observations may have changed.

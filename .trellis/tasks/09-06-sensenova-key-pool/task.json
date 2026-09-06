@@ -15,7 +15,7 @@
   "branch": "codex/sensenova-key-pool",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "84759ef8c3f219270c8b87e90e049a3e2d32ef39",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -30,7 +30,7 @@
     "middleware/distributor.go",
     "web/src/features/channels/components/dialogs/multi-key-manage-dialog.tsx"
   ],
-  "notes": "Implementation and targeted verification completed in the isolated ak47-api checkout on codex/sensenova-key-pool. Backend focused regressions/build, frontend 15 tests/typecheck/lint/build and final diff checks passed on forge. No production configuration, credentials, pricing or deployment changed. Commit and archive await user confirmation of commit-plan.md. Local task CLI requires a newer Python parser; do not modify the CLI for this feature.",
+  "notes": "Implementation committed as 84759ef and production release tag ak47token-2026-09-06-sensenova-pool.1 published at b3f2637. Deployed on 2026-09-06 after bounded forge BuildKit builds, isolated PostgreSQL restoration/migration and native management API checks. Production health, external version, source/attribution, pricing and static business-configuration digests passed. Only the application image changed; no real keys, pricing or old-channel routing changes. Old image and pre-switch backups retained. Application task complete; any provider activation or legacy-model cutover is separate. See docs/releases/2026-09-06-sensenova-pool.md for deployment evidence.",
   "meta": {
     "source_repository": "https://github.com/xyzxiaoma/ak47-api",
     "source_baseline": "7509625",
