@@ -49,6 +49,9 @@ or reset-time measurements. Do not duplicate the inventory across model pools.
   a 64-KiB response limit. They never enter customer billing/settlement. Initial
   manual probes claim a model scope (prefer configured `deepseek-v4-flash`), not
   the global scope; only already globally cooling keys use a global claim.
+- GLM probes must pair `thinking.type: disabled` with `reasoning_effort: none`.
+  Live acceptance on 2026-09-06 showed that disabled thinking alone returns 400;
+  this is a probe payload compatibility error, not exhausted account credits.
 - Backoff is 60 / 300 / 900 seconds, with bounded `Retry-After` when observed by
   probes. Invalid and administrator-disabled keys do not auto-probe.
 

@@ -133,10 +133,15 @@ func executeSenseNovaProbe(ctx context.Context, client *http.Client, claim *mode
 	if name == "" {
 		name = senseNovaProbeModel(claim.Channel)
 	}
-	payload, err := common.Marshal(map[string]interface{}{
+	requestPayload := map[string]interface{}{
 		"model": name, "messages": []map[string]string{{"role": "user", "content": "Reply OK"}},
 		"stream": false, "max_tokens": 8, "thinking": map[string]string{"type": "disabled"},
-	})
+	}
+	// SenseNova GLM rejects disabled thinking unless reasoning effort is also none.
+	if name == "glm-5.2" {
+		requestPayload["reasoning_effort"] = "none"
+	}
+	payload, err := common.Marshal(requestPayload)
 	if err != nil {
 		return false, failed, 0
 	}

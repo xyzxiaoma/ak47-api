@@ -98,7 +98,7 @@ func TestSenseNovaProbeRequiresValidSuccessAndExactCredential(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			base := "https://token.sensenova.cn"
-			claim := &model.SenseNovaProbeClaim{Key: "only-this-fixture-key", Scope: "kimi-k3", Channel: &model.Channel{Type: 1, BaseURL: &base, Models: "glm-5.2,kimi-k3", SenseNovaPool: true}}
+			claim := &model.SenseNovaProbeClaim{Key: "only-this-fixture-key", Scope: "glm-5.2", Channel: &model.Channel{Type: 1, BaseURL: &base, Models: "glm-5.2,kimi-k3", SenseNovaPool: true}}
 			client := &http.Client{Transport: senseNovaRoundTrip(func(r *http.Request) (*http.Response, error) {
 				assert.Equal(t, "Bearer "+claim.Key, r.Header.Get("Authorization"))
 				assert.Equal(t, base+"/v1/chat/completions", r.URL.String())
@@ -106,8 +106,10 @@ func TestSenseNovaProbeRequiresValidSuccessAndExactCredential(t *testing.T) {
 				require.NoError(t, err)
 				var payload map[string]interface{}
 				require.NoError(t, common.Unmarshal(body, &payload))
-				assert.Equal(t, "kimi-k3", payload["model"])
+				assert.Equal(t, "glm-5.2", payload["model"])
 				assert.Equal(t, float64(8), payload["max_tokens"])
+				assert.Equal(t, "none", payload["reasoning_effort"])
+				assert.Equal(t, map[string]interface{}{"type": "disabled"}, payload["thinking"])
 				return &http.Response{StatusCode: tt.status, Body: io.NopCloser(strings.NewReader(tt.body)), Header: http.Header{"Retry-After": []string{"120"}}}, nil
 			})}
 			success, failure, _ := executeSenseNovaProbe(context.Background(), client, claim)
