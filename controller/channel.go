@@ -475,6 +475,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
 	}
+	if err := service.ValidateSenseNovaPool(channel); err != nil {
+		return err
+	}
 
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {
@@ -627,6 +630,14 @@ func AddChannel(c *gin.Context) {
 	}
 
 	addChannelRequest.Channel.CreatedTime = common.GetTimestamp()
+	if addChannelRequest.Channel.SenseNovaPool {
+		addChannelRequest.Mode = "multi_to_single"
+		addChannelRequest.MultiKeyMode = constant.MultiKeyModePolling
+		if err := prepareSenseNovaKeys(addChannelRequest.Channel, nil); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	keys := make([]string, 0)
 	switch addChannelRequest.Mode {
 	case "multi_to_single":
@@ -964,14 +975,6 @@ func UpdateChannel(c *gin.Context) {
 	}
 	clearChannelReadOnlyFields(&channel, requestData)
 
-	// 使用统一的校验函数
-	if err := validateChannel(&channel.Channel, false); err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
 	// Preserve existing ChannelInfo to ensure multi-key channels keep correct state even if the client does not send ChannelInfo in the request.
 	originChannel, err := model.GetChannelById(channel.Id, true)
 	if err != nil {
@@ -979,6 +982,36 @@ func UpdateChannel(c *gin.Context) {
 			"success": false,
 			"message": err.Error(),
 		})
+		return
+	}
+	if _, provided := requestData["sensenova_pool"]; !provided {
+		channel.SenseNovaPool = originChannel.SenseNovaPool
+	}
+	if channel.SenseNovaPool {
+		if _, ok := requestData["type"]; !ok {
+			channel.Type = originChannel.Type
+		}
+		if _, ok := requestData["models"]; !ok {
+			channel.Models = originChannel.Models
+		}
+		if _, ok := requestData["base_url"]; !ok {
+			channel.BaseURL = originChannel.BaseURL
+		}
+		if _, ok := requestData["model_mapping"]; !ok {
+			channel.ModelMapping = originChannel.ModelMapping
+		}
+		if _, ok := requestData["status_code_mapping"]; !ok {
+			channel.StatusCodeMapping = originChannel.StatusCodeMapping
+		}
+		if _, ok := requestData["header_override"]; !ok {
+			channel.HeaderOverride = originChannel.HeaderOverride
+		}
+		if _, ok := requestData["param_override"]; !ok {
+			channel.ParamOverride = originChannel.ParamOverride
+		}
+	}
+	if err := validateChannel(&channel.Channel, false); err != nil {
+		common.ApiError(c, err)
 		return
 	}
 	originProxy := originChannel.GetSetting().Proxy
@@ -1081,6 +1114,15 @@ func UpdateChannel(c *gin.Context) {
 			}
 		case "replace":
 			// 覆盖模式：直接使用新密钥（默认行为，不需要特殊处理）
+		}
+	}
+	if channel.SenseNovaPool {
+		if channel.Key == "" {
+			channel.Key = originChannel.Key
+		}
+		if err := prepareSenseNovaKeys(&channel.Channel, originChannel); err != nil {
+			common.ApiError(c, err)
+			return
 		}
 	}
 	err = channel.Update()
@@ -1461,12 +1503,14 @@ func CopyChannel(c *gin.Context) {
 
 // MultiKeyManageRequest represents the request for multi-key management operations
 type MultiKeyManageRequest struct {
-	ChannelId int    `json:"channel_id"`
-	Action    string `json:"action"`              // "disable_key", "enable_key", "delete_key", "delete_disabled_keys", "get_key_status"
-	KeyIndex  *int   `json:"key_index,omitempty"` // for disable_key, enable_key, and delete_key actions
-	Page      int    `json:"page,omitempty"`      // for get_key_status pagination
-	PageSize  int    `json:"page_size,omitempty"` // for get_key_status pagination
-	Status    *int   `json:"status,omitempty"`    // for get_key_status filtering: 1=enabled, 2=manual_disabled, 3=auto_disabled, nil=all
+	ChannelId   int    `json:"channel_id"`
+	Action      string `json:"action"`              // "disable_key", "enable_key", "delete_key", "delete_disabled_keys", "get_key_status"
+	KeyIndex    *int   `json:"key_index,omitempty"` // for disable_key, enable_key, and delete_key actions
+	Page        int    `json:"page,omitempty"`      // for get_key_status pagination
+	PageSize    int    `json:"page_size,omitempty"` // for get_key_status pagination
+	Status      *int   `json:"status,omitempty"`    // for get_key_status filtering: 1=enabled, 2=manual_disabled, 3=auto_disabled, nil=all
+	KeyID       string `json:"key_id,omitempty"`
+	HealthState string `json:"health_state,omitempty"`
 }
 
 // MultiKeyStatusResponse represents the response for key status query
@@ -1477,17 +1521,20 @@ type MultiKeyStatusResponse struct {
 	PageSize   int         `json:"page_size"`
 	TotalPages int         `json:"total_pages"`
 	// Statistics
-	EnabledCount        int `json:"enabled_count"`
-	ManualDisabledCount int `json:"manual_disabled_count"`
-	AutoDisabledCount   int `json:"auto_disabled_count"`
+	EnabledCount        int            `json:"enabled_count"`
+	ManualDisabledCount int            `json:"manual_disabled_count"`
+	AutoDisabledCount   int            `json:"auto_disabled_count"`
+	HealthCounts        map[string]int `json:"health_counts,omitempty"`
 }
 
 type KeyStatus struct {
-	Index        int    `json:"index"`
-	Status       int    `json:"status"` // 1: enabled, 2: disabled
-	DisabledTime int64  `json:"disabled_time,omitempty"`
-	Reason       string `json:"reason,omitempty"`
-	KeyPreview   string `json:"key_preview"` // first 10 chars of key for identification
+	Index        int                 `json:"index"`
+	Status       int                 `json:"status"` // 1: enabled, 2: disabled
+	DisabledTime int64               `json:"disabled_time,omitempty"`
+	Reason       string              `json:"reason,omitempty"`
+	KeyPreview   string              `json:"key_preview"` // first 10 chars of key for identification
+	KeyID        string              `json:"key_id,omitempty"`
+	Health       *SenseNovaKeyHealth `json:"health,omitempty"`
 }
 
 // ManageMultiKeys handles multi-key management operations
@@ -1534,10 +1581,48 @@ func ManageMultiKeys(c *gin.Context) {
 	lock := model.GetChannelPollingLock(channel.Id)
 	lock.Lock()
 	defer lock.Unlock()
+	// A list edit may have completed while this request waited for the lock.
+	channel, err = model.GetChannelById(request.ChannelId, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if !channel.ChannelInfo.IsMultiKey {
+		common.ApiError(c, fmt.Errorf("channel is no longer multi-key"))
+		return
+	}
+	if channel.SenseNovaPool && (request.Action == "enable_key" || request.Action == "disable_key" || request.Action == "delete_key" || request.Action == "test_key") {
+		keys := channel.GetKeys()
+		if request.KeyIndex == nil || *request.KeyIndex < 0 || *request.KeyIndex >= len(keys) || request.KeyID == "" || model.SenseNovaFingerprint(keys[*request.KeyIndex]) != request.KeyID {
+			common.ApiError(c, fmt.Errorf("key list changed; refresh key status before retrying"))
+			return
+		}
+	}
 
 	switch request.Action {
+	case "test_key":
+		if !channel.SenseNovaPool {
+			common.ApiError(c, fmt.Errorf("manual key probes require a SenseNova pool"))
+			return
+		}
+		if err := service.QueueSenseNovaProbe(channel, channel.GetKeys()[*request.KeyIndex]); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": "Health probe scheduled"})
+		return
 	case "get_key_status":
 		keys := channel.GetKeys()
+		healthByKey := make(map[string]*SenseNovaKeyHealth)
+		healthCounts := make(map[string]int)
+		if channel.SenseNovaPool {
+			states, stateErr := model.ListSenseNovaStates(channel.Id)
+			if stateErr != nil {
+				common.ApiError(c, stateErr)
+				return
+			}
+			healthByKey = projectSenseNovaHealth(states)
+		}
 
 		// Default pagination parameters
 		page := request.Page
@@ -1547,6 +1632,9 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 		if pageSize <= 0 {
 			pageSize = 50 // Default page size
+		}
+		if pageSize > 500 {
+			pageSize = 500
 		}
 
 		// Statistics for all keys (unchanged by filtering)
@@ -1589,6 +1677,19 @@ func ManageMultiKeys(c *gin.Context) {
 			if len(key) > 10 {
 				keyPreview = key[:10] + "..."
 			}
+			var keyID string
+			var health *SenseNovaKeyHealth
+			if channel.SenseNovaPool {
+				keyID = model.SenseNovaFingerprint(key)
+				keyPreview = keyID[:12]
+				health = healthByKey[keyID]
+				if health == nil {
+					health = &SenseNovaKeyHealth{State: model.SenseNovaUntested}
+				}
+				if status == common.ChannelStatusEnabled {
+					healthCounts[health.State]++
+				}
+			}
 
 			allKeyStatusList = append(allKeyStatusList, KeyStatus{
 				Index:        i,
@@ -1596,19 +1697,21 @@ func ManageMultiKeys(c *gin.Context) {
 				DisabledTime: disabledTime,
 				Reason:       reason,
 				KeyPreview:   keyPreview,
+				KeyID:        keyID,
+				Health:       health,
 			})
 		}
 
 		// Apply status filter if specified
-		var filteredKeyStatusList []KeyStatus
-		if request.Status != nil {
-			for _, keyStatus := range allKeyStatusList {
-				if keyStatus.Status == *request.Status {
-					filteredKeyStatusList = append(filteredKeyStatusList, keyStatus)
-				}
+		filteredKeyStatusList := make([]KeyStatus, 0)
+		for _, keyStatus := range allKeyStatusList {
+			if request.Status != nil && keyStatus.Status != *request.Status {
+				continue
 			}
-		} else {
-			filteredKeyStatusList = allKeyStatusList
+			if request.HealthState != "" && (keyStatus.Status != common.ChannelStatusEnabled || keyStatus.Health == nil || keyStatus.Health.State != request.HealthState) {
+				continue
+			}
+			filteredKeyStatusList = append(filteredKeyStatusList, keyStatus)
 		}
 
 		// Calculate pagination based on filtered results
@@ -1646,6 +1749,7 @@ func ManageMultiKeys(c *gin.Context) {
 				EnabledCount:        enabledCount,        // Overall statistics
 				ManualDisabledCount: manualDisabledCount, // Overall statistics
 				AutoDisabledCount:   autoDisabledCount,   // Overall statistics
+				HealthCounts:        healthCounts,
 			},
 		})
 		return
@@ -1679,6 +1783,10 @@ func ManageMultiKeys(c *gin.Context) {
 		}
 
 		channel.ChannelInfo.MultiKeyStatusList[keyIndex] = 2 // disabled
+		if channel.SenseNovaPool {
+			channel.ChannelInfo.MultiKeyDisabledTime[keyIndex] = time.Now().Unix()
+			channel.ChannelInfo.MultiKeyDisabledReason[keyIndex] = "Manually disabled"
+		}
 
 		err = channel.Update()
 		if err != nil {
@@ -1781,6 +1889,10 @@ func ManageMultiKeys(c *gin.Context) {
 			// 只禁用当前启用的密钥
 			if status == 1 {
 				channel.ChannelInfo.MultiKeyStatusList[i] = 2 // disabled
+				if channel.SenseNovaPool {
+					channel.ChannelInfo.MultiKeyDisabledTime[i] = time.Now().Unix()
+					channel.ChannelInfo.MultiKeyDisabledReason[i] = "Manually disabled"
+				}
 				disabledCount++
 			}
 		}
@@ -1965,7 +2077,7 @@ func ManageMultiKeys(c *gin.Context) {
 }
 
 func multiKeyActionRequiresSensitiveWrite(action string) bool {
-	return action == "delete_key" || action == "delete_disabled_keys"
+	return action == "delete_key" || action == "delete_disabled_keys" || action == "test_key"
 }
 
 // OllamaPullModel 拉取 Ollama 模型

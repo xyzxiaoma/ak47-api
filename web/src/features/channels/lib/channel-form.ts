@@ -33,6 +33,7 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import { SENSENOVA_MODELS, SENSENOVA_BASE_URL } from './sensenova-pool'
 
 // ============================================================================
 // Form Validation Schema
@@ -197,6 +198,7 @@ export const channelFormSchema = z
   .object({
     name: z.string().min(1, ERROR_MESSAGES.REQUIRED_NAME),
     type: z.number().min(0, ERROR_MESSAGES.REQUIRED_TYPE),
+    sensenova_pool: z.boolean().optional(),
     base_url: z.string().optional(),
     key: z.string(),
     openai_organization: z.string().optional(),
@@ -281,6 +283,54 @@ export const channelFormSchema = z
     upstream_model_update_ignored_models: z.string().optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.sensenova_pool) {
+      for (const field of [
+        'model_mapping',
+        'status_code_mapping',
+        'header_override',
+        'param_override',
+      ] as const) {
+        const value = data[field]?.trim()
+        if (value && value !== '{}') {
+          addRequiredIssue(
+            ctx,
+            field,
+            'SenseNova pool does not support model, status, header or parameter overrides'
+          )
+        }
+      }
+      if (
+        data.type !== 1 ||
+        normalizeBaseUrl(data.base_url) !== SENSENOVA_BASE_URL
+      ) {
+        addRequiredIssue(
+          ctx,
+          'sensenova_pool',
+          'SenseNova pool requires OpenAI type and the SenseNova Base URL'
+        )
+      }
+      if (
+        parseModels(data.models).some(
+          (model) => !SENSENOVA_MODELS.includes(model)
+        )
+      ) {
+        addRequiredIssue(
+          ctx,
+          'models',
+          'SenseNova pool supports only the four selected models'
+        )
+      }
+      if (
+        data.multi_key_mode !== 'multi_to_single' ||
+        data.multi_key_type !== 'polling'
+      ) {
+        addRequiredIssue(
+          ctx,
+          'multi_key_mode',
+          'SenseNova pool requires multi-key polling'
+        )
+      }
+    }
     if (
       [3, 8, 36, 45, CHANNEL_TYPE_NEW_API].includes(data.type) &&
       !data.base_url?.trim()
@@ -401,6 +451,7 @@ export type ChannelFormValues = z.infer<typeof channelFormSchema>
 export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   name: '',
   type: 1,
+  sensenova_pool: false,
   base_url: '',
   key: '',
   openai_organization: '',
@@ -487,8 +538,7 @@ export function transformChannelToFormDefaults(
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
         http_protocol: protocol,
-        http2_connection_shards:
-          protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
@@ -553,6 +603,7 @@ export function transformChannelToFormDefaults(
   return {
     name: channel.name || '',
     type: channel.type,
+    sensenova_pool: channel.sensenova_pool ?? false,
     base_url: channel.base_url || '',
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
@@ -572,8 +623,10 @@ export function transformChannelToFormDefaults(
     header_override: channel.header_override || '',
     settings: channel.settings || '{}',
     other: channel.other || '',
-    multi_key_mode: 'single',
-    multi_key_type: channel.channel_info.multi_key_mode || 'random',
+    multi_key_mode: channel.sensenova_pool ? 'multi_to_single' : 'single',
+    multi_key_type: channel.sensenova_pool
+      ? 'polling'
+      : channel.channel_info.multi_key_mode || 'random',
     batch_add_set_key_prefix_2_name: false,
     key_mode: 'append', // Default to append mode for editing multi-key channels
     // Channel extra settings
@@ -779,6 +832,7 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
   const channel: Partial<Channel> = {
     name: formData.name,
     type: formData.type,
+    sensenova_pool: formData.sensenova_pool ?? false,
     base_url: normalizeBaseUrl(formData.base_url) || null,
     key: formData.key,
     openai_organization: formData.openai_organization || null,
@@ -828,6 +882,7 @@ export function transformFormDataToUpdatePayload(
     id: channelId,
     name: formData.name,
     type: formData.type,
+    sensenova_pool: formData.sensenova_pool ?? false,
     base_url: normalizeBaseUrl(formData.base_url) || null,
     openai_organization: formData.openai_organization || null,
     models: formData.models,

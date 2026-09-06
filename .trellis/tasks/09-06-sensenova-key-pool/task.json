@@ -1,0 +1,42 @@
+{
+  "id": "sensenova-key-pool",
+  "name": "sensenova-key-pool",
+  "title": "SenseNova 多 Key 冷却轮转与后台状态管理",
+  "description": "Extend the production New API fork with administrator-managed SenseNova API keys, request-driven per-key cooldown, safe failover, scheduled recovery probes, and observable key status for four selected models.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "channels",
+  "package": null,
+  "priority": "P1",
+  "creator": "sad",
+  "assignee": "sad",
+  "createdAt": "2026-09-06",
+  "completedAt": null,
+  "branch": "codex/sensenova-key-pool",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "model/channel.go",
+    "controller/relay.go",
+    "controller/channel.go",
+    "controller/channel-test.go",
+    "service/channel.go",
+    "service/system_task.go",
+    "middleware/distributor.go",
+    "web/src/features/channels/components/dialogs/multi-key-manage-dialog.tsx"
+  ],
+  "notes": "Implementation and targeted verification completed in the isolated ak47-api checkout on codex/sensenova-key-pool. Backend focused regressions/build, frontend 15 tests/typecheck/lint/build and final diff checks passed on forge. No production configuration, credentials, pricing or deployment changed. Commit and archive await user confirmation of commit-plan.md. Local task CLI requires a newer Python parser; do not modify the CLI for this feature.",
+  "meta": {
+    "source_repository": "https://github.com/xyzxiaoma/ak47-api",
+    "source_baseline": "7509625",
+    "production_host": "ak47-prod",
+    "production_root": "/opt/new-api",
+    "planning_review": "implementation approved by user on 2026-09-06; legacy model cutover remains a release-only review item",
+    "task_creation_authorized": true
+  }
+}

@@ -36,6 +36,7 @@ export type ChannelInfo = z.infer<typeof channelInfoSchema>
 
 export const channelSchema = z.object({
   id: z.number(),
+  sensenova_pool: z.boolean().default(false),
   type: z.number(),
   key: z.string(),
   openai_organization: z.string().nullish(),
@@ -219,6 +220,21 @@ export interface CopyChannelResponse {
 
 export interface KeyStatus {
   index: number
+  key_id?: string
+  health?: {
+    state: 'untested' | 'usable' | 'cooling' | 'invalid'
+    reason: string
+    last_success_at: number
+    last_failure_at: number
+    last_probe_at: number
+    next_probe_at: number
+    model_states?: Array<{
+      model: string
+      state: string
+      reason: string
+      next_probe_at: number
+    }>
+  }
   status: number // 1: enabled, 2: manual disabled, 3: auto disabled
   disabled_time?: number
   reason?: string
@@ -233,7 +249,9 @@ export type MultiKeyConfirmAction = {
     | 'enable-all'
     | 'disable-all'
     | 'delete-disabled'
+    | 'test'
   keyIndex?: number
+  keyId?: string
 }
 
 export interface MultiKeyStatusResponse {
@@ -248,6 +266,7 @@ export interface MultiKeyStatusResponse {
     enabled_count: number
     manual_disabled_count: number
     auto_disabled_count: number
+    health_counts?: Record<string, number>
   }
 }
 
@@ -310,7 +329,11 @@ export interface MultiKeyManageParams {
     | 'disable_all_keys'
     | 'delete_key'
     | 'delete_disabled_keys'
+    | 'test_key'
   key_index?: number
+  key_id?: string
+  model?: string
+  health_state?: string
   page?: number
   page_size?: number
   status?: number // 1=enabled, 2=manual_disabled, 3=auto_disabled

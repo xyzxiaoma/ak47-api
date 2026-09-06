@@ -1,0 +1,5 @@
+{"file":"AGENTS.md","reason":"Root JSON, database, relay, testing, and release conventions"}
+{"file":"web/AGENTS.md","reason":"Frontend controls, i18n, permission boundaries, and regression tests"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/prd.md","reason":"User-confirmed scope, constraints, and acceptance criteria"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/design.md","reason":"Key identity, cooldown, retry, recovery, and console contracts"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/research/findings.md","reason":"Verified integration points and upstream API limitations"}

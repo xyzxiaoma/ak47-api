@@ -24,6 +24,7 @@ type Channel struct {
 	Id                 int     `json:"id"`
 	Type               int     `json:"type" gorm:"default:0"`
 	Key                string  `json:"key" gorm:"not null"`
+	SenseNovaPool      bool    `json:"sensenova_pool" gorm:"column:sensenova_pool"`
 	OpenAIOrganization *string `json:"openai_organization"`
 	TestModel          *string `json:"test_model"`
 	Status             int     `json:"status" gorm:"default:1"`
@@ -350,6 +351,12 @@ func (channel *Channel) SaveWithoutKey() error {
 	if channel.Id == 0 {
 		return errors.New("channel ID is 0")
 	}
+	if channel.SenseNovaPool {
+		withoutKey := *channel
+		withoutKey.Key = ""
+		_, err := withoutKey.updateSenseNovaPoolIfNeeded()
+		return err
+	}
 	return DB.Omit("key").Save(channel).Error
 }
 
@@ -568,8 +575,10 @@ func (channel *Channel) Update() error {
 			}
 		}
 	}
-	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	handled, err := channel.updateSenseNovaPoolIfNeeded()
+	if !handled && err == nil {
+		err = DB.Model(channel).Updates(channel).Error
+	}
 	if err != nil {
 		return err
 	}
@@ -785,7 +794,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 }
 
 func EnableChannelByTag(tag string) error {
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error
+	err := updateSenseNovaChannelStatusByTag(tag, common.ChannelStatusEnabled)
 	if err != nil {
 		return err
 	}
@@ -794,7 +803,7 @@ func EnableChannelByTag(tag string) error {
 }
 
 func DisableChannelByTag(tag string) error {
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusManuallyDisabled).Error
+	err := updateSenseNovaChannelStatusByTag(tag, common.ChannelStatusManuallyDisabled)
 	if err != nil {
 		return err
 	}

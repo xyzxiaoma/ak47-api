@@ -325,7 +325,7 @@ const SENSITIVE_MASK = '••••'
 /**
  * Balance cell component with click to update
  */
-function BalanceCell({ channel }: { channel: Channel }) {
+export function BalanceCell({ channel }: { channel: Channel }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
   const layout = useContext(ChannelRowActionsLayoutContext)
@@ -358,9 +358,9 @@ function BalanceCell({ channel }: { channel: Channel }) {
       showSymbol: layout !== 'card',
     })
   )
-  const remainingFull = withSuffix(
-    formatCurrencyFromUSD(balance, balanceFormatOptions)
-  )
+  const remainingFull = channel.sensenova_pool
+    ? t('N/A')
+    : withSuffix(formatCurrencyFromUSD(balance, balanceFormatOptions))
   const usedDisplay =
     usedFull.length > MAX_INLINE_BALANCE_CHARS
       ? withSuffix(
@@ -419,7 +419,7 @@ function BalanceCell({ channel }: { channel: Channel }) {
   const variant = getBalanceVariant(balance)
 
   const handleClickUpdate = async () => {
-    if (isUpdating) {
+    if (isUpdating || channel.sensenova_pool) {
       return
     }
 
@@ -456,9 +456,15 @@ function BalanceCell({ channel }: { channel: Channel }) {
     remainingTooltipLabel = maskedRemainingLabel
   } else if (channel.type === 57) {
     remainingTooltipLabel = t('Click to view Codex usage')
+  } else if (channel.sensenova_pool) {
+    remainingTooltipLabel = t(
+      'Remaining quota is not available through the API key'
+    )
   }
   let remainingBadgeVariant: StatusBadgeProps['variant'] = variant
-  if (channel.type === 57) {
+  if (channel.sensenova_pool) {
+    remainingBadgeVariant = 'neutral'
+  } else if (channel.type === 57) {
     remainingBadgeVariant = 'info'
   } else if (isUpdating) {
     remainingBadgeVariant = 'neutral'
@@ -493,14 +499,18 @@ function BalanceCell({ channel }: { channel: Channel }) {
                 size='sm'
                 copyable={false}
                 showDot={false}
-                className='cursor-pointer'
-                onClick={handleClickUpdate}
+                className={
+                  channel.sensenova_pool ? 'cursor-help' : 'cursor-pointer'
+                }
+                onClick={channel.sensenova_pool ? undefined : handleClickUpdate}
               />
             }
           />
           <TooltipContent>
             <p>{remainingTooltipLabel}</p>
-            {channel.type !== 57 && <p>{t('Click to update balance')}</p>}
+            {channel.type !== 57 && !channel.sensenova_pool && (
+              <p>{t('Click to update balance')}</p>
+            )}
           </TooltipContent>
         </Tooltip>
       </div>

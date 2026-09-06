@@ -260,6 +260,7 @@ func migrateDB() error {
 
 	err := DB.AutoMigrate(
 		&Channel{},
+		&SenseNovaKeyState{},
 		&Token{},
 		&User{},
 		&UserSession{},
@@ -323,6 +324,7 @@ func migrateDBFast() error {
 		name  string
 	}{
 		{&Channel{}, "Channel"},
+		{&SenseNovaKeyState{}, "SenseNovaKeyState"},
 		{&Token{}, "Token"},
 		{&User{}, "User"},
 		{&UserSession{}, "UserSession"},

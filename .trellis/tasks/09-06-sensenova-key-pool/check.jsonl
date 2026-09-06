@@ -1,0 +1,5 @@
+{"file":"AGENTS.md","reason":"Cross-database, billing, security, and source-release invariants"}
+{"file":"web/AGENTS.md","reason":"Administrator UI behavior and frontend checks"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/prd.md","reason":"Verify each acceptance criterion and keep deferred items explicit"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/implement.md","reason":"Deterministic behavior matrix and scoped validation plan"}
+{"file":".trellis/tasks/09-06-sensenova-key-pool/research/findings.md","reason":"Distinguish observed evidence from unverified provider behavior"}

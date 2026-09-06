@@ -24,15 +24,21 @@ import type { MultiKeyConfirmAction } from '../../types'
 
 type MultiKeyTableRowActionsProps = {
   keyIndex: number
+  keyId?: string
   status: number
   canDelete: boolean
+  showTest?: boolean
+  canTest?: boolean
   onAction: (action: MultiKeyConfirmAction) => void
 }
 
 export function MultiKeyTableRowActions({
   keyIndex,
+  keyId,
   status,
   canDelete,
+  showTest,
+  canTest,
   onAction,
 }: MultiKeyTableRowActionsProps) {
   const { t } = useTranslation()
@@ -40,11 +46,21 @@ export function MultiKeyTableRowActions({
 
   return (
     <div className='flex justify-end gap-2'>
+      {showTest && (
+        <Button
+          variant='outline'
+          size='sm'
+          disabled={!canTest}
+          onClick={() => onAction({ type: 'test', keyIndex, keyId })}
+        >
+          {t('Test key')}
+        </Button>
+      )}
       {isEnabled ? (
         <Button
           variant='outline'
           size='sm'
-          onClick={() => onAction({ type: 'disable', keyIndex })}
+          onClick={() => onAction({ type: 'disable', keyIndex, keyId })}
         >
           {t('Disable')}
         </Button>
@@ -52,7 +68,7 @@ export function MultiKeyTableRowActions({
         <Button
           variant='outline'
           size='sm'
-          onClick={() => onAction({ type: 'enable', keyIndex })}
+          onClick={() => onAction({ type: 'enable', keyIndex, keyId })}
         >
           {t('Enable')}
         </Button>
@@ -62,7 +78,7 @@ export function MultiKeyTableRowActions({
         size='sm'
         onClick={() => {
           if (!canDelete) return
-          onAction({ type: 'delete', keyIndex })
+          onAction({ type: 'delete', keyIndex, keyId })
         }}
         disabled={!canDelete}
         title={

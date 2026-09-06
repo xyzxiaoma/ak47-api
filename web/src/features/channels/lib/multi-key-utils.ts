@@ -43,6 +43,8 @@ export function getMultiKeyConfirmMessage(
   if (!action) return ''
 
   switch (action.type) {
+    case 'test':
+      return 'Schedule a small health probe for this key? This consumes a small amount of upstream credits and does not reveal the balance.'
     case 'delete':
       return MULTI_KEY_CONFIRM_MESSAGES.DELETE
     case 'enable':

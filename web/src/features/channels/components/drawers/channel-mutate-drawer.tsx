@@ -190,6 +190,7 @@ import {
   ChannelEditorLoadingState,
   ChannelModelsSection,
 } from './sections'
+import { SenseNovaPoolField } from './sections/sensenova-pool-field'
 
 type ChannelMutateDrawerProps = {
   open: boolean
@@ -266,6 +267,7 @@ const ADVANCED_SETTINGS_CHILD_SECTION_IDS: string[] = Object.values(
 const ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT = 3
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
 const SENSITIVE_FORM_FIELDS = [
+  'sensenova_pool',
   'type',
   'base_url',
   'key',
@@ -1968,6 +1970,10 @@ export function ChannelMutateDrawer({
                       className='scroll-mt-4'
                     >
                       <ChannelBasicSection>
+                        <SenseNovaPoolField
+                          form={form}
+                          disabled={sensitiveLocked}
+                        />
                         <div className='grid gap-4 sm:grid-cols-2'>
                           <fieldset
                             disabled={sensitiveLocked}
@@ -4233,9 +4239,7 @@ export function ChannelMutateDrawer({
                                         <SelectValue />
                                       </SelectTrigger>
                                     </FormControl>
-                                    <SelectContent
-                                      alignItemWithTrigger={false}
-                                    >
+                                    <SelectContent alignItemWithTrigger={false}>
                                       <SelectGroup>
                                         <SelectItem value='auto'>
                                           {t('Auto')}

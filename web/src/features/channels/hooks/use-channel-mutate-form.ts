@@ -44,6 +44,7 @@ type UseChannelMutateFormParams = {
 }
 
 const SENSITIVE_UPDATE_FIELDS = [
+  'sensenova_pool',
   'type',
   'key',
   'base_url',

@@ -128,7 +128,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
-				common.SysLog("error handling stream format: " + err.Error())
+				if !service.IsSenseNovaAttempt(c) {
+					common.SysLog("error handling stream format: " + err.Error())
+				}
 				sr.Error(err)
 			}
 		}
@@ -141,7 +143,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 			lastStreamData = data
 			collectStreamFunctionCallNames(data, seenStreamToolCalls, &streamFunctionCallNames)
 			if err := processTokenData(info.RelayMode, data, &responseTextBuilder, &toolCount); err != nil {
-				logger.LogError(c, "error processing stream token data: "+err.Error())
+				if !service.IsSenseNovaAttempt(c) {
+					logger.LogError(c, "error processing stream token data: "+err.Error())
+				}
 				sr.Error(err)
 			}
 		}
@@ -169,7 +173,9 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	shouldSendLastResp := true
 	if err := handleLastResponse(lastStreamData, &responseId, &createAt, &systemFingerprint, &model, &usage,
 		&containStreamUsage, info, &shouldSendLastResp); err != nil {
-		logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
+		if !service.IsSenseNovaAttempt(c) {
+			logger.LogError(c, fmt.Sprintf("error handling last response: %s, lastStreamData: [%s]", err.Error(), lastStreamData))
+		}
 	}
 
 	if info.RelayFormat == types.RelayFormatOpenAI {
@@ -227,7 +233,9 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
-	logger.LogDebug(c, "upstream response body: %s", responseBody)
+	if !service.IsSenseNovaAttempt(c) {
+		logger.LogDebug(c, "upstream response body: %s", responseBody)
+	}
 	// Unmarshal to simpleResponse
 	if info.ChannelType == constant.ChannelTypeOpenRouter && info.ChannelOtherSettings.IsOpenRouterEnterprise() {
 		// 尝试解析为 openrouter enterprise

@@ -17,6 +17,9 @@ func formatNotifyType(channelId int, status int) string {
 
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
+	if channel, err := model.GetChannelById(channelError.ChannelId, false); err == nil && channel.SenseNovaPool {
+		return
+	}
 	common.SysLog(fmt.Sprintf("通道「%s」（#%d）发生错误，准备禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, common.LocalLogPreview(reason)))
 
 	// 检查是否启用自动禁用功能
@@ -34,6 +37,9 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 }
 
 func EnableChannel(channelId int, usingKey string, channelName string) {
+	if channel, err := model.GetChannelById(channelId, false); err == nil && channel.SenseNovaPool {
+		return
+	}
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
 		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)

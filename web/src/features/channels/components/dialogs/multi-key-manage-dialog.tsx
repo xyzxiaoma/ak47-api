@@ -51,6 +51,7 @@ import {
   enableAllMultiKeys,
   disableAllMultiKeys,
   deleteDisabledMultiKeys,
+  manageMultiKeys,
 } from '../../api'
 import { MULTI_KEY_FILTER_OPTIONS } from '../../constants'
 import {
@@ -60,10 +61,12 @@ import {
   getMultiKeyConfirmMessage,
   isDestructiveAction,
 } from '../../lib'
+import { canProbeSenseNovaKey } from '../../lib/sensenova-pool'
 import type { KeyStatus, MultiKeyConfirmAction } from '../../types'
 import { useChannels } from '../channels-provider'
 import { StatisticsCard } from './multi-key-statistics-card'
 import { MultiKeyTableRowActions } from './multi-key-table-row-actions'
+import { SenseNovaKeyHealth } from './sensenova-key-health'
 
 type MultiKeyManageDialogProps = {
   open: boolean
@@ -94,6 +97,8 @@ export function MultiKeyManageDialog({
   const [enabledCount, setEnabledCount] = useState(0)
   const [manualDisabledCount, setManualDisabledCount] = useState(0)
   const [autoDisabledCount, setAutoDisabledCount] = useState(0)
+  const [healthCounts, setHealthCounts] = useState<Record<string, number>>({})
+  const [healthFilter, setHealthFilter] = useState('all')
 
   // UI state
   const [statusFilter, setStatusFilter] = useState<number | null>(null)
@@ -106,7 +111,8 @@ export function MultiKeyManageDialog({
     if (open && currentRow) {
       setCurrentPage(1)
       setStatusFilter(null)
-      loadKeyStatus(1, pageSize, null)
+      setHealthFilter('all')
+      loadKeyStatus(1, pageSize, null, 'all')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentRow?.id])
@@ -114,7 +120,8 @@ export function MultiKeyManageDialog({
   const loadKeyStatus = async (
     page: number = currentPage,
     size: number = pageSize,
-    status: number | null = statusFilter
+    status: number | null = statusFilter,
+    healthState: string = healthFilter
   ) => {
     if (!currentRow) return
 
@@ -124,7 +131,8 @@ export function MultiKeyManageDialog({
         currentRow.id,
         page,
         size,
-        status === null ? undefined : status
+        status === null ? undefined : status,
+        healthState === 'all' ? undefined : healthState
       )
 
       if (response.success && response.data) {
@@ -136,6 +144,7 @@ export function MultiKeyManageDialog({
         setEnabledCount(response.data.enabled_count || 0)
         setManualDisabledCount(response.data.manual_disabled_count || 0)
         setAutoDisabledCount(response.data.auto_disabled_count || 0)
+        setHealthCounts(response.data.health_counts || {})
       } else {
         toast.error(response.message || t('Failed to load key status'))
       }
@@ -149,7 +158,7 @@ export function MultiKeyManageDialog({
   }
 
   const handleStatusFilterChange = (value: string) => {
-    const newFilter = value === 'all' ? null : parseInt(value)
+    const newFilter = value === 'all' ? null : Number.parseInt(value)
     setStatusFilter(newFilter)
     setCurrentPage(1)
     loadKeyStatus(1, pageSize, newFilter)
@@ -165,6 +174,7 @@ export function MultiKeyManageDialog({
     if (
       !canEditSensitive &&
       (confirmAction.type === 'delete' ||
+        confirmAction.type === 'test' ||
         confirmAction.type === 'delete-disabled')
     ) {
       setConfirmAction(null)
@@ -173,16 +183,23 @@ export function MultiKeyManageDialog({
 
     setIsPerformingAction(true)
     try {
-      const { type, keyIndex } = confirmAction
+      const { type, keyIndex, keyId } = confirmAction
       let response
 
       // Execute the appropriate action
       if (type === 'enable' && keyIndex !== undefined) {
-        response = await enableMultiKey(currentRow.id, keyIndex)
+        response = await enableMultiKey(currentRow.id, keyIndex, keyId)
       } else if (type === 'disable' && keyIndex !== undefined) {
-        response = await disableMultiKey(currentRow.id, keyIndex)
+        response = await disableMultiKey(currentRow.id, keyIndex, keyId)
       } else if (type === 'delete' && keyIndex !== undefined) {
-        response = await deleteMultiKey(currentRow.id, keyIndex)
+        response = await deleteMultiKey(currentRow.id, keyIndex, keyId)
+      } else if (type === 'test' && keyIndex !== undefined && keyId) {
+        response = await manageMultiKeys({
+          channel_id: currentRow.id,
+          action: 'test_key',
+          key_index: keyIndex,
+          key_id: keyId,
+        })
       } else if (type === 'enable-all') {
         response = await enableAllMultiKeys(currentRow.id)
       } else if (type === 'disable-all') {
@@ -192,7 +209,11 @@ export function MultiKeyManageDialog({
       }
 
       if (response?.success) {
-        toast.success(response.message || t('Operation successful'))
+        toast.success(
+          type === 'test'
+            ? t('Probe scheduled. Refresh status to see the result.')
+            : response.message || t('Operation successful')
+        )
         queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
 
         // Reload data - reset to page 1 for bulk actions
@@ -270,10 +291,46 @@ export function MultiKeyManageDialog({
         bodyClassName='space-y-4'
       >
         <div className='flex min-h-0 flex-1 flex-col space-y-4 overflow-hidden'>
+          {currentRow.sensenova_pool && (
+            <div className='shrink-0 space-y-2'>
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Availability is detected from requests and small probes. Remaining credits and exact weekly or five-hour reset times are not available.'
+                )}
+              </p>
+              <div className='flex flex-wrap gap-2 text-sm'>
+                <span>
+                  {t('Usable')}: {healthCounts.usable ?? 0}
+                </span>
+                <span>
+                  {t('Untested')}: {healthCounts.untested ?? 0}
+                </span>
+                <span>
+                  {t('Cooling')}: {healthCounts.cooling ?? 0}
+                </span>
+                <span>
+                  {t('Invalid credential')}: {healthCounts.invalid ?? 0}
+                </span>
+              </div>
+              {healthCounts.cooling > 0 &&
+                !healthCounts.usable &&
+                !healthCounts.untested && (
+                  <p role='status' className='text-sm'>
+                    {t(
+                      'No usable keys. Cooling keys will be checked automatically; manually disabled keys stay disabled.'
+                    )}
+                  </p>
+                )}
+            </div>
+          )}
           {/* Statistics */}
           <div className='grid shrink-0 grid-cols-3 gap-3'>
             <StatisticsCard
-              label={t('Enabled')}
+              label={
+                currentRow.sensenova_pool
+                  ? t('Administratively enabled')
+                  : t('Enabled')
+              }
               count={enabledCount}
               total={total}
             />
@@ -292,14 +349,12 @@ export function MultiKeyManageDialog({
           <Separator className='shrink-0' />
 
           {/* Toolbar */}
-          <div className='flex shrink-0 items-center justify-between'>
+          <div className='flex shrink-0 flex-wrap items-center justify-between gap-2'>
             <Select
-              items={[
-                ...MULTI_KEY_FILTER_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: t(option.label),
-                })),
-              ]}
+              items={MULTI_KEY_FILTER_OPTIONS.map((option) => ({
+                value: option.value,
+                label: t(option.label),
+              }))}
               value={statusFilter === null ? 'all' : statusFilter.toString()}
               onValueChange={(v) => v !== null && handleStatusFilterChange(v)}
             >
@@ -317,12 +372,34 @@ export function MultiKeyManageDialog({
               </SelectContent>
             </Select>
 
+            {currentRow.sensenova_pool && (
+              <label className='flex items-center gap-2 text-sm'>
+                {t('Health status')}
+                <select
+                  className='bg-background rounded-md border px-2 py-1'
+                  value={healthFilter}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    setHealthFilter(value)
+                    loadKeyStatus(1, pageSize, statusFilter, value)
+                  }}
+                >
+                  <option value='all'>{t('All Status')}</option>
+                  <option value='usable'>{t('Usable')}</option>
+                  <option value='untested'>{t('Untested')}</option>
+                  <option value='cooling'>{t('Cooling')}</option>
+                  <option value='invalid'>{t('Invalid credential')}</option>
+                </select>
+              </label>
+            )}
+
             <div className='flex items-center gap-2'>
               <Button
                 variant='outline'
                 size='sm'
                 onClick={() => loadKeyStatus()}
                 disabled={isLoading}
+                aria-label={t('Refresh')}
               >
                 <RefreshCw className='h-4 w-4' />
               </Button>
@@ -378,33 +455,49 @@ export function MultiKeyManageDialog({
 
           {/* Table */}
           <div className='min-h-0 flex-1 overflow-auto rounded-md border'>
-            {isLoading ? (
+            {isLoading && (
               <div className='flex items-center justify-center py-12'>
                 <Loader2 className='text-muted-foreground h-8 w-8 animate-spin' />
               </div>
-            ) : keys.length === 0 ? (
+            )}
+            {!isLoading && keys.length === 0 && (
               <div className='text-muted-foreground py-12 text-center'>
                 {t('No keys found')}
               </div>
-            ) : (
+            )}
+            {!isLoading && keys.length > 0 && (
               <StaticDataTable
                 className='rounded-none border-0'
                 tableClassName='min-w-[800px]'
                 data={keys}
-                getRowKey={(key) => key.index}
+                getRowKey={(key) => key.key_id || key.index}
                 columns={[
                   {
                     id: 'index',
                     header: t('Index'),
                     className: 'w-20',
                     cellClassName: 'font-mono text-sm',
-                    cell: (key) => `#${key.index + 1}`,
+                    cell: (key) => (
+                      <span>
+                        #{key.index + 1}
+                        {key.key_id && (
+                          <span className='text-muted-foreground block text-xs'>
+                            {key.key_id.slice(0, 12)}
+                          </span>
+                        )}
+                      </span>
+                    ),
                   },
                   {
                     id: 'status',
                     header: t('Status'),
                     className: 'w-32',
-                    cell: (key) => renderStatusBadge(key.status),
+                    cell: (key) =>
+                      currentRow.sensenova_pool ? (
+                        <SenseNovaKeyHealth entry={key} />
+                      ) : (
+                        renderStatusBadge(key.status)
+                      ),
                   },
                   {
                     id: 'reason',
@@ -427,8 +520,11 @@ export function MultiKeyManageDialog({
                     cell: (key) => (
                       <MultiKeyTableRowActions
                         keyIndex={key.index}
+                        keyId={key.key_id}
                         status={key.status}
                         canDelete={canEditSensitive}
+                        showTest={currentRow.sensenova_pool}
+                        canTest={canProbeSenseNovaKey(key, canEditSensitive)}
                         onAction={setConfirmAction}
                       />
                     ),

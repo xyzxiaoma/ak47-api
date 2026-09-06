@@ -3,6 +3,9 @@ package controller
 import "github.com/QuantumNous/new-api/model"
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
+	if _, ok := requestData["sensenova_pool"]; ok && channel.SenseNovaPool != origin.SenseNovaPool {
+		return true
+	}
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
 		return true
 	}
@@ -61,6 +64,7 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 // channelHasSensitiveChanges with a precise old-vs-new comparison; this set is
 // used to exclude them from the fail-closed scan for unknown fields.
 var channelSensitiveFields = map[string]struct{}{
+	"sensenova_pool":      {},
 	"type":                {},
 	"key":                 {},
 	"base_url":            {},

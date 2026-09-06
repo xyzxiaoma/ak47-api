@@ -80,6 +80,9 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 }
 
 func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+	if channel.SenseNovaPool {
+		return testResult{localErr: errors.New("Use the SenseNova per-key health check in key management")}
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -945,7 +948,7 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 		if report != nil {
 			report(index, total) // channels completed before this one
 		}
-		if channel.Status == common.ChannelStatusManuallyDisabled {
+		if channel.SenseNovaPool || channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}
 		isChannelEnabled := channel.Status == common.ChannelStatusEnabled
@@ -1044,6 +1047,9 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*model.Channel {
 	selected := make([]*model.Channel, 0, len(channels))
 	for _, channel := range channels {
+		if channel.SenseNovaPool {
+			continue
+		}
 		if channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}

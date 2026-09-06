@@ -378,7 +378,8 @@ export async function getMultiKeyStatus(
   channelId: number,
   page = 1,
   pageSize = 50,
-  status?: number
+  status?: number,
+  healthState?: string
 ): Promise<MultiKeyStatusResponse> {
   return manageMultiKeys({
     channel_id: channelId,
@@ -386,6 +387,7 @@ export async function getMultiKeyStatus(
     page,
     page_size: pageSize,
     status,
+    health_state: healthState,
   }) as Promise<MultiKeyStatusResponse>
 }
 
@@ -394,12 +396,14 @@ export async function getMultiKeyStatus(
  */
 export async function enableMultiKey(
   channelId: number,
-  keyIndex: number
+  keyIndex: number,
+  keyId?: string
 ): Promise<{ success: boolean; message?: string }> {
   return manageMultiKeys({
     channel_id: channelId,
     action: 'enable_key',
     key_index: keyIndex,
+    key_id: keyId,
   }) as Promise<{ success: boolean; message?: string }>
 }
 
@@ -408,12 +412,14 @@ export async function enableMultiKey(
  */
 export async function disableMultiKey(
   channelId: number,
-  keyIndex: number
+  keyIndex: number,
+  keyId?: string
 ): Promise<{ success: boolean; message?: string }> {
   return manageMultiKeys({
     channel_id: channelId,
     action: 'disable_key',
     key_index: keyIndex,
+    key_id: keyId,
   }) as Promise<{ success: boolean; message?: string }>
 }
 
@@ -422,12 +428,14 @@ export async function disableMultiKey(
  */
 export async function deleteMultiKey(
   channelId: number,
-  keyIndex: number
+  keyIndex: number,
+  keyId?: string
 ): Promise<{ success: boolean; message?: string }> {
   return manageMultiKeys({
     channel_id: channelId,
     action: 'delete_key',
     key_index: keyIndex,
+    key_id: keyId,
   }) as Promise<{ success: boolean; message?: string }>
 }
 
