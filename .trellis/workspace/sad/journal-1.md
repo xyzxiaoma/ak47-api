@@ -114,3 +114,24 @@ Deployed pool.3 with per-model discount preservation in scheduled pricing sync. 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: Flat model marketplace deployment
+
+**Date**: 2026-09-06
+**Task**: Flat model marketplace deployment
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Replaced stacked model cards with a responsive flat grid and deployed pricing-flat.1. Targeted regression tests, typecheck, lint and production builds passed on forge. Production status, pricing and attribution passed; desktop/mobile browser checks displayed all 17 separate cards without overlap or overflow. Preserved SenseNova keys, channels and one-tenth pricing; backups and preceding image retained.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65e92ad` | (see git log) |
+
+### Status
+
+[OK] **Completed**
