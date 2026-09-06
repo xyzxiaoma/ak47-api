@@ -93,3 +93,24 @@ Published and deployed pool.2; activated supplied single key in pool 15, disable
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: Fixed SenseNova discounts and key-pool operation
+
+**Date**: 2026-09-06
+**Task**: Fixed SenseNova discounts and key-pool operation
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Deployed pool.3 with per-model discount preservation in scheduled pricing sync. Set the four SenseNova models to 0.1 for input/output/cache-read/cache-write and verified public pricing after cache refresh. Preserved other prices, channels and keys. Documented append-key workflow and round-robin TPM boundaries.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d7beb4c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
