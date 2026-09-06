@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-09-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~74 | Active |
+| `journal-1.md` | ~95 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-09-06 | SenseNova activation and GLM probe compatibility | `59353ed` | `codex/sensenova-key-pool` |
 | 3 | 2026-09-06 | SenseNova 密钥池实现与正式发布 | `84759ef`, `b3f2637`, `612e3b7` | `codex/sensenova-key-pool` |
 | 2 | 2026-08-22 | 前端控制室视觉重设计并部署 | `674d6dcc`, `c304ab95` | `main` |
 | 1 | 2026-08-22 | RelaxyCode channel adapter deployment | `5d8e3571`, `6fc0487d`, `f312cadd` | `main` |

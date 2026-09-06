@@ -72,3 +72,24 @@ Adapted automatic channel tests to Chat Completions-to-Responses policy with pas
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: SenseNova activation and GLM probe compatibility
+
+**Date**: 2026-09-06
+**Task**: SenseNova activation and GLM probe compatibility
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Published and deployed pool.2; activated supplied single key in pool 15, disabled old channels 4/5/6, preserved prices and unrelated providers. GLM and both DeepSeek models passed real gateway; Kimi intermittent upstream rate limit handled by recovery. Backups and rollback retained; temporary acceptance resources cleaned.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `59353ed` | (see git log) |
+
+### Status
+
+[OK] **Completed**
