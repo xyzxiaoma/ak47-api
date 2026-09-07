@@ -1,6 +1,6 @@
 # SenseNova retry reliability — 2026-09-07
 
-Planned derivative version: `ak47token-2026-09-07-sensenova-retry.1`.
+Deployed derivative version: `ak47token-2026-09-07-sensenova-retry.1`.
 New API AGPL licensing, notices and attribution remain intact; dependencies,
 models, channel inventory and pricing are unchanged.
 
@@ -29,10 +29,32 @@ The four-key test composes controller retry and selection; it is not a full
 authenticated HTTP Relay integration test. Billing boundaries were also reviewed.
 No real provider load test or customer-request replay is required.
 
-Production remains on `ak47token-2026-09-06-pricing-flat.1`. Compose and PostgreSQL
-were backed up under `/opt/new-api/backups/sensenova-429-20260907/`; the validated
+Compose and PostgreSQL were backed up before deployment under
+`/opt/new-api/backups/sensenova-429-20260907/`; the validated
 dump SHA-256 is
 `96bcb48a00bd5330a1631058a18bf5a541dbcd2196bd802847abbe7a8e225aff`.
-The old image and Compose remain the rollback target. Release requires the
-reviewed source commit/tag, bounded build on `forge`, image/source checks and
-an image-only application rollout preserving all sixteen 0.1 selling ratios.
+The previous `pricing-flat.1` image and Compose remain the rollback target.
+
+## Production verification
+
+- Deployed at 2026-09-07 07:24:15 UTC from public tag
+  `ak47token-2026-09-07-sensenova-retry.1`, source commit
+  `3cef8f4ca0b79fb066d0eca5bd134246002ec0d3`.
+- Image manifest/loaded image identity:
+  `sha256:a92658f8149cd459ebacb4196ee352a6d5deec10a1b8a564b96324a82772ea40`.
+- The isolated `forge` builder was limited to 3 GiB and two CPUs, then stopped.
+  Frontend production build passed (24 seconds); backend build passed
+  (184.5 seconds). Version, source revision and three bundled license/notice
+  files passed before transfer; production loaded the identical image.
+- Compose diff changed only the application image. Application is healthy;
+  PostgreSQL and Redis retained their August 7 start times.
+- Loopback and public HTTPS checks passed for status/version, exact-tag source
+  link, upstream attribution and all sixteen SenseNova selling ratios (0.1).
+  The four-model preserve-discounts environment variable remained unchanged.
+- Read-only channel configuration checksum before/after matched
+  `68cb1c29bc9ce9789a21afef2abeab56`. It covers credentials, enabled status,
+  models, groups and overrides without printing their contents; volatile
+  counters/polling position are excluded. No key or channel edits were made.
+- No synthetic production inference or customer-content replay was sent. The
+  new diagnostics are verified by fake upstream and admin-log privacy tests;
+  the actual subtype of future provider rejections remains an observation.

@@ -15,12 +15,12 @@
   "branch": "codex/sensenova-key-pool",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "3cef8f4ca0b79fb066d0eca5bd134246002ec0d3",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "User approved the final repair scope, testing and production deployment on 2026-09-07. Implement bounded four-key failover, Retry-After and safe diagnostics without changing models, keys or pricing.",
+  "notes": "User approved scope, commit and deployment. Release ak47token-2026-09-07-sensenova-retry.1 deployed at 2026-09-07 07:24:15 UTC; healthy, exact public source verified, channel checksum unchanged, all sixteen discounts 0.1. Targeted remote regressions and builds passed. No real upstream load tests; historical provider 429 subtype remains unproven.",
   "meta": {}
 }

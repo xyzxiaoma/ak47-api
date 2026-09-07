@@ -79,5 +79,5 @@ defects without weakening upstream limits or changing customer model semantics.
   content truncation, thinking changes, global limiter changes or quota bypass.
 - No promise to eliminate provider-side 429s. This scope fixes verified gateway
   limitations and makes the next rejection diagnosable without sensitive data.
-- Final scope was approved on 2026-09-07. Implementation is in progress;
-  production deployment must wait for passing checks and release verification.
+- Final scope and commit/deployment were approved on 2026-09-07. The tested
+  release was deployed and passed production verification; see release notes.
