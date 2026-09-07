@@ -71,6 +71,10 @@ func geminiRelayHandler(c *gin.Context, info *relaycommon.RelayInfo) *types.NewA
 func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	requestId := c.GetString(common.RequestIdKey)
+	// Selection may already have measured health waits in middleware.
+	if service.IsSenseNovaAttempt(c) {
+		service.InitSenseNovaLatency(c)
+	}
 	//group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 	//originalModel := common.GetContextKeyString(c, constant.ContextKeyOriginalModel)
 
@@ -78,6 +82,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
 	)
+	// Registered before response writing and billing cleanup, so this is the
+	// final request clock. Consume/error logs contain earlier snapshots.
+	defer func() { service.CompleteSenseNovaLatency(c, newAPIError != nil) }()
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
 		var err error
@@ -250,6 +257,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = relayHandler(c, relayInfo)
 		}
 
+		service.FinishSenseNovaLatencyAttempt(c, relayInfo, newAPIError != nil)
 		if newAPIError == nil {
 			service.RecordSenseNovaRelaySuccess(c)
 			relayInfo.LastError = nil
@@ -458,6 +466,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["sensenova"] = details
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		service.AppendSenseNovaLatencyAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

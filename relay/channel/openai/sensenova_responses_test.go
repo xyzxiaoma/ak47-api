@@ -147,8 +147,18 @@ func TestSenseNovaResponsesResponseConversion(t *testing.T) {
 				body = "data: " + `{"id":"chat_test","model":"deepseek-v4-pro","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_shell","type":"function","function":{"name":"exec_command","arguments":"{\"cmd\":"}}]}}]}` + "\n\ndata: " + `{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"cat result.txt\"}"}}]},"finish_reason":"tool_calls"}]}` + "\n\ndata: " + `{"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120,"prompt_tokens_details":{"cached_tokens":80}}}` + "\n\ndata: [DONE]\n\n"
 			}
 			resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{contentType}}, Body: io.NopCloser(strings.NewReader(body))}
+			service.MarkSenseNovaLatencyDispatch(c)()
 			usage, apiErr := adaptor.DoResponse(c, resp, info)
 			require.Nil(t, apiErr)
+			timing := service.SenseNovaLatencyLogInfo(c)
+			require.NotNil(t, timing)
+			require.Len(t, timing.Attempts, 1)
+			assert.NotNil(t, timing.Attempts[0].HeadersMS)
+			assert.NotNil(t, timing.Attempts[0].FirstSemanticMS, "tool argument output is semantic")
+			assert.Nil(t, timing.Attempts[0].FirstAnswerMS, "tool-only output is not answer text")
+			assert.NotNil(t, timing.Attempts[0].FinishMS, "attempt must finish before consume logging")
+			assert.Equal(t, "success", timing.Attempts[0].Outcome)
+			assert.False(t, timing.Complete, "request billing/cleanup has not completed")
 			require.IsType(t, &dto.Usage{}, usage)
 			assert.Equal(t, 120, usage.(*dto.Usage).TotalTokens)
 			output := recorder.Body.String()
@@ -187,8 +197,18 @@ func TestSenseNovaResponsesTerminalFailure(t *testing.T) {
 			_, err := adaptor.ConvertOpenAIResponsesRequest(c, info, dto.OpenAIResponsesRequest{Model: "deepseek-v4-pro"})
 			require.NoError(t, err)
 			resp := &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewBufferString(tc.body))}
+			service.MarkSenseNovaLatencyDispatch(c)()
 			_, apiErr := adaptor.DoResponse(c, resp, info)
 			require.NotNil(t, apiErr)
+			timing := service.SenseNovaLatencyLogInfo(c)
+			require.NotNil(t, timing)
+			require.Len(t, timing.Attempts, 1)
+			assert.NotNil(t, timing.Attempts[0].FinishMS)
+			assert.NotEqual(t, "success", timing.Attempts[0].Outcome)
+			if !strings.Contains(tc.body, "partial") {
+				assert.Nil(t, timing.Attempts[0].FirstSemanticMS)
+				assert.Nil(t, timing.Attempts[0].FirstAnswerMS)
+			}
 			assert.NotContains(t, recorder.Body.String(), "response.completed")
 			assert.NotContains(t, recorder.Body.String(), "synthetic upstream failure")
 			if tc.stream {

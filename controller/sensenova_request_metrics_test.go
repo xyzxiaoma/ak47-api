@@ -59,6 +59,7 @@ func TestSenseNovaErrorLogKeepsSafeDiagnosticsAdminOnly(t *testing.T) {
 	}, 1234))
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 	require.Nil(t, middleware.SetupContextForSelectedChannel(c, channel, "glm-5.2"))
+	service.MarkSenseNovaLatencyDispatch(c)()
 	key := common.GetContextKeyString(c, constant.ContextKeyChannelKey)
 	body, err := common.Marshal(map[string]interface{}{"error": map[string]interface{}{
 		"code": "ModelAccountTpmRateLimitExceeded", "message": "private upstream message " + key,
@@ -70,15 +71,23 @@ func TestSenseNovaErrorLogKeepsSafeDiagnosticsAdminOnly(t *testing.T) {
 		Body:       io.NopCloser(strings.NewReader(string(body))),
 	}, false)
 	safe := service.RecordSenseNovaRelayFailure(c, upstream)
+	service.FinishSenseNovaLatencyAttempt(c, nil, true)
 	processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, true, key, false), safe)
 	var entry model.Log
 	require.NoError(t, model.LOG_DB.First(&entry).Error)
 	var other struct {
 		AdminInfo struct {
-			SenseNova map[string]interface{} `json:"sensenova"`
+			SenseNova map[string]interface{}       `json:"sensenova"`
+			Latency   *service.SenseNovaLatencyLog `json:"sensenova_latency"`
 		} `json:"admin_info"`
 	}
 	require.NoError(t, common.UnmarshalJsonStr(entry.Other, &other))
+	require.NotNil(t, other.AdminInfo.Latency)
+	require.Len(t, other.AdminInfo.Latency.Attempts, 1)
+	assert.NotNil(t, other.AdminInfo.Latency.Attempts[0].HeadersMS)
+	assert.NotNil(t, other.AdminInfo.Latency.Attempts[0].FinishMS)
+	assert.Nil(t, other.AdminInfo.Latency.Attempts[0].FirstSemanticMS)
+	assert.Equal(t, "error", other.AdminInfo.Latency.Attempts[0].Outcome)
 	details := other.AdminInfo.SenseNova
 	require.NotNil(t, details)
 	assert.Equal(t, "tpm", details["limit_kind"])
@@ -96,4 +105,5 @@ func TestSenseNovaErrorLogKeepsSafeDiagnosticsAdminOnly(t *testing.T) {
 	require.Len(t, publicLogs, 1)
 	assert.NotContains(t, publicLogs[0].Other, "admin_info")
 	assert.NotContains(t, publicLogs[0].Other, "key_id")
+	assert.NotContains(t, publicLogs[0].Other, "sensenova_latency")
 }

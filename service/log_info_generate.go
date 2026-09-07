@@ -116,6 +116,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	}
 
 	AppendChannelAffinityAdminInfo(ctx, adminInfo)
+	AppendSenseNovaLatencyAdminInfo(ctx, adminInfo)
 
 	other["admin_info"] = adminInfo
 	appendRequestPath(ctx, relayInfo, other)
@@ -125,6 +126,14 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	appendParamOverrideInfo(relayInfo, other)
 	appendStreamStatus(relayInfo, other)
 	return other
+}
+
+// AppendSenseNovaLatencyAdminInfo retains the existing non-admin stripping
+// boundary and copies a snapshot, never sharing mutable request state with logs.
+func AppendSenseNovaLatencyAdminInfo(ctx *gin.Context, adminInfo map[string]interface{}) {
+	if timing := SenseNovaLatencyLogInfo(ctx); timing != nil && adminInfo != nil {
+		adminInfo["sensenova_latency"] = timing
+	}
 }
 
 func appendParamOverrideInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {

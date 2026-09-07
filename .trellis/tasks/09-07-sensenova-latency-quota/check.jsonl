@@ -1,0 +1,3 @@
+{"file":"AGENTS.md","reason":"Repository quality and compatibility invariants"}
+{"file":".trellis/spec/backend/sensenova-pool.md","reason":"Retry ownership, billing and admin-only privacy"}
+{"file":".trellis/tasks/09-07-sensenova-latency-quota/prd.md","reason":"Latency semantics and evidence-backed quota requirements"}

@@ -112,6 +112,7 @@ func getSenseNovaAttempt(c *gin.Context) *senseNovaAttempt {
 }
 
 func SelectSenseNovaKey(c *gin.Context, channel *model.Channel, name string) (string, int, *types.NewAPIError) {
+	InitSenseNovaLatency(c)
 	state, configErr := senseNovaAdmissionState(c, name)
 	if configErr != nil {
 		return "", 0, senseNovaAdmissionError("Invalid SenseNova admission configuration", http.StatusServiceUnavailable)
@@ -130,7 +131,7 @@ func SelectSenseNovaKey(c *gin.Context, channel *model.Channel, name string) (st
 		if !cooling {
 			return "", 0, selectedErr
 		}
-		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay); waitErr != nil {
+		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay, SenseNovaWaitHealth); waitErr != nil {
 			return "", 0, waitErr
 		}
 	}

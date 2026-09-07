@@ -82,6 +82,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
+	observeLatency := service.SenseNovaStreamLatencyObserver(c)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -265,6 +266,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 				continue
 			}
 			if !strings.HasPrefix(data, "[DONE]") {
+				if observeLatency != nil {
+					observeLatency(data)
+				}
 				info.SetFirstResponseTime()
 				info.ReceivedResponseCount++
 

@@ -1,0 +1,4 @@
+{"file":"AGENTS.md","reason":"Repository invariants and independent relaykit build"}
+{"file":".trellis/spec/backend/sensenova-pool.md","reason":"Pool admission, retry, privacy and accounting contracts"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Transport to stream to administrator-log lifecycle"}
+{"file":".trellis/tasks/09-07-sensenova-latency-quota/prd.md","reason":"User-approved scope and acceptance criteria"}

@@ -53,6 +53,7 @@ func OaiChatToResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		}
 	}
 
+	service.ObserveSenseNovaCompletionLatency(c, &chatResp)
 	if responseID := helper.GetResponseID(c); responseID != "" {
 		chatResp.Id = responseID
 	}

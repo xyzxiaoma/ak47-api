@@ -66,7 +66,7 @@ func senseNovaAdmissionError(message string, status int) *types.NewAPIError {
 
 // waitSenseNovaAdmission holds a shared queue lease only while no key can
 // accept this request. The single deadline is reused across selection/retries.
-func waitSenseNovaAdmission(c *gin.Context, state *senseNovaAdmission, channelID int, delay time.Duration) *types.NewAPIError {
+func waitSenseNovaAdmission(c *gin.Context, state *senseNovaAdmission, channelID int, delay time.Duration, cause SenseNovaWaitCause) *types.NewAPIError {
 	if c.Request == nil || c.Request.Context().Err() != nil || c.Writer.Written() {
 		return senseNovaAdmissionError("SenseNova admission canceled", http.StatusServiceUnavailable)
 	}
@@ -101,6 +101,8 @@ func waitSenseNovaAdmission(c *gin.Context, state *senseNovaAdmission, channelID
 	if delay > remaining {
 		delay = remaining
 	}
+	started := time.Now()
+	defer func() { RecordSenseNovaAdmissionWait(c, cause, time.Since(started)) }()
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
 	select {
@@ -289,13 +291,15 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 		if candidates > 0 && candidates == oversized && !cooling {
 			return senseNovaAdmissionError("SenseNova request exceeds configured TPM budget", http.StatusTooManyRequests)
 		}
+		cause := SenseNovaWaitCapacity
 		if cooling && (delay == 0 || healthDelay < delay) {
 			delay = healthDelay
+			cause = SenseNovaWaitHealth
 		}
 		if delay == 0 {
 			return senseNovaAdmissionError("SenseNova pool has no eligible capacity", http.StatusServiceUnavailable)
 		}
-		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay); waitErr != nil {
+		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay, cause); waitErr != nil {
 			return waitErr
 		}
 	}

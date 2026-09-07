@@ -200,6 +200,35 @@ func TestSenseNovaBudgetRollingWindowAndStaleFinish(t *testing.T) {
 	assert.Equal(t, 30*time.Second, wait, "history expires per admission, not a fixed bucket")
 }
 
+func TestSenseNovaBudgetWaitUntilEnoughCapacityExpires(t *testing.T) {
+	_, advance := setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	for i, tokens := range []int64{20, 60, 20} {
+		if i > 0 {
+			advance(10 * time.Second)
+		}
+		r, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest(fmt.Sprint(i), tokens), policy)
+		require.NoError(t, err)
+		require.NotNil(t, r)
+		require.NoError(t, finishSenseNovaBudget(ctx, r, tokens, false))
+	}
+	request := senseNovaTestBudgetRequest("needs-eighty", 80)
+	r, wait, err := reserveSenseNovaBudget(ctx, request, policy)
+	require.NoError(t, err)
+	require.Nil(t, r)
+	require.Equal(t, 50*time.Second, wait, "the first 20-token expiry alone cannot admit an 80-token request")
+	advance(49 * time.Second)
+	r, wait, err = reserveSenseNovaBudget(ctx, request, policy)
+	require.NoError(t, err)
+	require.Nil(t, r)
+	require.Equal(t, time.Second, wait)
+	advance(time.Second)
+	r, wait, err = reserveSenseNovaBudget(ctx, request, policy)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	require.Zero(t, wait)
+}
+
 func TestSenseNovaBudgetLeaseRenewalAndTTL(t *testing.T) {
 	server, advance := setupSenseNovaBudgetRedis(t)
 	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()

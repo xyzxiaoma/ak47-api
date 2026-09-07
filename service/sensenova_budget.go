@@ -75,13 +75,23 @@ end
 local existing = redis.call('ZSCORE', KEYS[1], id)
 if existing then wait = math.max(wait, tonumber(existing) - now) end
 local entries = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
-local total = 0
-for i = 1, #entries, 2 do
-  local debit = tonumber(redis.call('HGET', KEYS[2], entries[i]) or '0')
-  total = total + math.min(debit, 9007199254740991 - total)
-end
-if #entries >= 8192 or (cap > 0 and estimate > cap - total) then
+if #entries >= 8192 then
   if #entries > 0 then wait = math.max(wait, tonumber(entries[2]) - now) end
+end
+if cap > 0 then
+  -- Walk newest to oldest: retain the newest suffix that fits alongside this
+  -- request. The first older debit that does not fit determines the earliest
+  -- sufficient expiry, rather than waking at an unrelated small/zero debit.
+  -- Subtract from the remaining allowance instead of summing large usage.
+  local remaining = cap - estimate
+  for i = #entries - 1, 1, -2 do
+    local debit = tonumber(redis.call('HGET', KEYS[2], entries[i]) or '0')
+    if debit > remaining then
+      wait = math.max(wait, tonumber(entries[i + 1]) - now)
+      break
+    end
+    remaining = remaining - debit
+  end
 end
 if wait > 0 then return {0, wait, ''} end
 local retention = window

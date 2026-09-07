@@ -535,7 +535,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		req = req.WithContext(c.Request.Context())
 	}
 	service.MarkSenseNovaBudgetDispatched(c)
+	observeHeaders := service.MarkSenseNovaLatencyDispatch(c)
 	resp, err := relayClient.Do(req)
+	if resp != nil {
+		observeHeaders()
+	}
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))

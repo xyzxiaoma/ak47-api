@@ -167,6 +167,7 @@ func Distribute() func(c *gin.Context) {
 				service.SetSenseNovaRetryAfterHeader(c)
 			}
 			abortWithOpenAiMessage(c, setupErr.StatusCode, setupErr.Error(), setupErr.GetErrorCode())
+			service.CompleteSenseNovaLatency(c, true)
 			return
 		}
 		c.Next()

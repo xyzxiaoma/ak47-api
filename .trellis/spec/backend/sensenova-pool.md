@@ -3,9 +3,11 @@
 ## 1. Scope / Trigger
 
 Applies only to channels explicitly opting in with `sensenova_pool: true`.
-The operator supplies keys belonging to independent accounts. API keys cannot
-read the console credit balance, so health observations are not remaining quota
-or reset-time measurements. Do not duplicate the inventory across model pools.
+The relationship between configured keys and supplier accounts is unverified;
+do not assume separate keys imply independent quotas. No documented inference-key
+contract for reading console balances is available. Health observations are not
+remaining quota or reset-time measurements. Do not duplicate the inventory
+across model pools.
 
 ## 2. Signatures
 
@@ -125,6 +127,10 @@ or reset-time measurements. Do not duplicate the inventory across model pools.
   channel/group and does not count as another upstream attempt. Recheck health
   before dispatch. Share the 75-second wait deadline across retries; at most
   32 requests per channel wait by default. Cancelled requests stop promptly.
+- For known budgets, the wake hint must name the earliest ledger expiry that
+  frees enough tokens for the pending estimate, not simply the oldest debit.
+  Provider points, subscription request allowances and independent API keys do
+  not establish TPM/RPM values or independent account capacity.
 - Undispatched reservations are released; uncertain upstream outcomes retain
   conservative debits. Successful measured usage reconciles only the owning
   reservation. A probe, stale completion or another request cannot clear it.
@@ -144,6 +150,25 @@ or reset-time measurements. Do not duplicate the inventory across model pools.
   cancellation, oversized admission, Redis failure and health independence in
   `service/sensenova_{budget,admission}_test.go`; validate the Responses bridge
   and terminal errors in `relay/channel/openai/sensenova_responses_test.go`.
+
+### Request latency diagnostics
+
+- Record only opted-in traffic under `admin_info.sensenova_latency`. Keep
+  credentials, raw headers, prompts and all output content out of diagnostics.
+  Existing user/token log filtering must remove the whole administrator object.
+- Record actual dispatch, headers, first nonempty reasoning/text/tool arguments,
+  first answer text and attempt finish separately. Empty/role-only events,
+  usage, heartbeats, errors and tool names/IDs alone do not count as content.
+- Bind stream observations to their original attempt, using a synchronized
+  monotonic clock. Attempt durations start at dispatch; dispatch and finish
+  offsets start at the request. Missing events are omitted, never zero-filled.
+- Actual capacity and health sleeps are disjoint. Retry wait is their subset
+  after a finished attempt; never add it again to total wait or total duration.
+- Consume/error records contain incomplete snapshots. Emit one final structured
+  `SenseNova request latency: ` backend record after request cleanup, including
+  failures before dispatch and cancellations. Do not add or rewrite billing
+  records to collect timing. Separate client HTTP retry sleeps remain outside
+  a server request's clock. See `docs/releases/2026-09-07-sensenova-latency.md`.
 
 ## 5. Good / Base / Bad Cases
 

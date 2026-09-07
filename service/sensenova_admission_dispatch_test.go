@@ -54,4 +54,11 @@ func TestSenseNovaDispatchHonorsCancellation(t *testing.T) {
 	}
 	assert.Error(t, err)
 	assert.Zero(t, calls.Load(), "a terminated SenseNova request must not reach upstream")
+	service.FinishSenseNovaLatencyAttempt(c, nil, true)
+	timing := service.SenseNovaLatencyLogInfo(c)
+	require.NotNil(t, timing)
+	require.Len(t, timing.Attempts, 1, "dispatch measures a client.Do invocation, including canceled transport")
+	assert.Nil(t, timing.Attempts[0].HeadersMS)
+	assert.Nil(t, timing.Attempts[0].FirstSemanticMS)
+	assert.Equal(t, "canceled", timing.Attempts[0].Outcome)
 }
