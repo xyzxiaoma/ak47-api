@@ -189,3 +189,26 @@ Deployed Responses-to-Chat compatibility, namespace/custom tool replay, develope
 ### Next Steps
 
 - Confirm supplier account TPM before configuring positive token limits; keep Codex web_search disabled for this provider.
+
+
+## Session 9: SenseNova latency diagnostics and verified Claude acceptance
+
+**Date**: 2026-09-07
+**Task**: SenseNova latency diagnostics and verified Claude acceptance
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Deployed latency diagnostics and sufficient-capacity wake correction. Official quota values remain unverified; conservative pacing retained. Targeted tests and release build passed. Public Claude completed exact Write/Read and final answer in 223.26 seconds after two 429 responses; cleanup verified after forge connectivity recovered.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6f9f0bf` | (see git log) |
+| `427477b` | (see git log) |
+| `3d1545b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
