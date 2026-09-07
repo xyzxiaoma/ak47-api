@@ -157,3 +157,35 @@ Deployed four-key bounded failover, bounded Retry-After and safe admin diagnosti
 ### Status
 
 [OK] **Completed**
+
+
+## Session 8: SenseNova Codex compatibility and TPM deployment
+
+**Date**: 2026-09-07
+**Task**: SenseNova Codex compatibility and TPM deployment
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Deployed Responses-to-Chat compatibility, namespace/custom tool replay, developer-role mapping and bounded Redis TPM admission. Exact 429001 classification and review fixes preserve health, cancellation and measured usage accounting. Public Codex completed three HTTP200 requests and exact file/answer checks in 108.58 seconds; upstream TPM limits remain and cause bounded waiting.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `14152e0` | (see git log) |
+| `ad7ead4` | (see git log) |
+
+### Testing
+
+- [OK] Focused controller/service/model/middleware/relay protocol, budget, cancellation and billing regressions passed on forge; relaykit independently built.
+- [OK] Isolated real Codex 84.6s and custom-tool replay 5.88s passed; public production Codex 108.58s passed.
+- [OK] Exact source/version/license/attribution and unchanged channel/pricing checksums verified; PostgreSQL and Redis unchanged.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Confirm supplier account TPM before configuring positive token limits; keep Codex web_search disabled for this provider.
