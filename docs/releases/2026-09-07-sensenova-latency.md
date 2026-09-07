@@ -1,5 +1,7 @@
 # SenseNova latency diagnostics and capacity wait correction
 
+Deployed release: `ak47token-2026-09-07-sensenova-latency.1` (2026-09-07).
+
 ## Behavior
 
 Opted-in SenseNova requests record administrator-only timing diagnostics.
@@ -99,3 +101,61 @@ This initial canary preceded two telemetry-only review corrections (rounding
 and late SSE error classification); final deployment acceptance is recorded
 separately below. A discarded fixture run failed before upstream dispatch
 because its SQLite JSON field was seeded as text instead of a blob.
+
+## Deployment and rollback
+
+- Deployed at 2026-09-07 12:33:07 UTC from exact source commit
+  `6f9f0bfd385fa98d8ffb3df4fc5e65f92455d69c` and the public release tag above.
+- Production and forge image identity:
+  `sha256:c859e1f97505204832f98a5f56aa4b68a3b1513c74f4c51cab37c42f2cbdc396`.
+  The full frontend/backend Docker build passed. Public version and exact source
+  link, required New API attribution and original-project link passed checks
+  in the release artifact and initial homepage assets. All three license/notice
+  files remain packaged. No dependencies or database schemas changed.
+- Backups: `/opt/new-api/backups/sensenova-latency-20260907/`. Root-only Compose
+  and environment backups are retained. The PostgreSQL dump passed
+  `pg_restore --list`; SHA-256:
+  `7f88d8e24e06de32a10e18ad4f530d780ec49e83a79f8e1c469ccfb1155d1c16`.
+- Compose changed only the application image; the application is healthy.
+  PostgreSQL and Redis start times remained unchanged. Channel checksum
+  `e5fd571ef6f89a0b0c04ed94677a9c82` and pricing checksum
+  `9cddd1a0895f7f525536201e0a3097b0` matched immediately before/after deployment.
+
+Rollback: restore `docker-compose.yml` from that backup, then run
+`docker compose --project-directory /opt/new-api -f /opt/new-api/docker-compose.yml up -d --no-deps --wait new-api`.
+The previous `new-api:ak47token-2026-09-07-sensenova-codex-tpm.1` image remains
+available. No database restore or Redis reset is needed for application rollback.
+
+## Public acceptance observations
+
+The unchanged Claude Code 2.1.263 profile sent all 25 tools with adaptive
+thinking and max_tokens=32000 through `https://ak47token.com`. Two HTTP 429
+responses were followed by three successful, complete server-side responses.
+The proxy independently observed successful Write and Read tool rounds.
+
+| Request | Server total | Gateway wait | Upstream attempts | Successful first semantic output |
+| --- | --- | --- | --- | --- |
+| Initial 429 | 1.598 s | 0 | 4 failed | absent |
+| Retried 429 | 28.482 s | 14.007 s | 4 failed | absent |
+| Write | 38.667 s | 29.010 s | 2 failed, 1 successful | 3.714 s |
+| Read | 10.955 s | 5.002 s | 1 successful | 3.693 s |
+| Final response | 45.622 s | 40.107 s | 1 failed, 1 successful | 2.951 s |
+
+First-semantic values start at the successful attempt's dispatch, not the
+client's initial request. The final response's first answer-text time was also
+2.951 seconds. The initial 429s instructed the client to wait 59 and 36 seconds;
+those separate client sleeps are outside the server totals. Most gateway sleep
+in this production sample was waiting for healthy eligible keys after cooldown.
+The five request IDs had exactly three consume records (52,895 input / 191 output
+tokens) and eleven internal TPM error records. Those errors count attempts,
+not eleven customer-visible failures. The measurements do not show that 429s
+were eliminated or establish any numeric provider quota.
+
+The remote probe process exited 0, but forge SSH became unreachable immediately
+before retrieving its final JSON report. Exact file/final-answer assertions and
+the client's complete elapsed time are therefore not independently confirmed
+for this production run. The harness removes its temporary copied token in
+`finally`; the post-run filesystem check is also pending connectivity. Earlier
+isolated canary credentials/database/services were independently confirmed
+removed, and the dedicated build/test containers were stopped. Production
+remains healthy; no application rollback was indicated by these observations.
