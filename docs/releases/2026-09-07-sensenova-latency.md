@@ -151,11 +151,12 @@ tokens) and eleven internal TPM error records. Those errors count attempts,
 not eleven customer-visible failures. The measurements do not show that 429s
 were eliminated or establish any numeric provider quota.
 
-The remote probe process exited 0, but forge SSH became unreachable immediately
-before retrieving its final JSON report. Exact file/final-answer assertions and
-the client's complete elapsed time are therefore not independently confirmed
-for this production run. The harness removes its temporary copied token in
-`finally`; the post-run filesystem check is also pending connectivity. Earlier
-isolated canary credentials/database/services were independently confirmed
-removed, and the dedicated build/test containers were stopped. Production
-remains healthy; no application rollback was indicated by these observations.
+After forge connectivity recovered, the saved client report was retrieved and
+verified: exit code 0, successful Write/Read calls, exact file contents and exact
+final answer, in 223.26 seconds. Client statuses were 429, 429, 200, 200, 200.
+The temporary copied token was independently confirmed absent. Earlier isolated
+canary credentials/database/services were independently confirmed removed, and
+the dedicated build/test containers were stopped. A fresh forge check also
+wrote/read 10,000 integers, verified their sum as 50,005,000, and removed its
+temporary files. Production remained healthy during the forge connection
+interruption; no application rollback was indicated by these observations.
