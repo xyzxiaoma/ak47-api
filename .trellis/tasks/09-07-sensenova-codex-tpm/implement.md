@@ -11,4 +11,4 @@ Approved source: prior diagnostic findings and user approval in this conversatio
 - [x] Run bounded affected Go regressions on forge and required independent module checks.
 - [x] Review the full diff and resolve findings.
 - [x] Run isolated patched-gateway and real Codex tool-loop acceptance with synthetic content.
-- [ ] Record verified source/version and rollback artifacts for deployment; document final measured behavior and remaining provider-capacity limits.
+- [x] Record verified source/version and rollback artifacts for deployment; document final measured behavior and remaining provider-capacity limits.

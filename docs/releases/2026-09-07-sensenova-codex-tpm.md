@@ -1,7 +1,7 @@
 # SenseNova Codex compatibility and admission — 2026-09-07
 
-Release candidate: `ak47token-2026-09-07-sensenova-codex-tpm.1`.
-Implementation, review and isolated acceptance passed; deployment pending.
+Deployed release: `ak47token-2026-09-07-sensenova-codex-tpm.1`.
+Implementation, review, isolated acceptance and public production acceptance passed.
 
 ## Problem and behavior
 
@@ -98,10 +98,36 @@ matched exactly; replaying `custom_tool_call_output` produced the exact final
 `CUSTOM_OK` marker. Deterministic tests additionally cover namespaced identity,
 forced tool choice, incomplete streams, lease ownership and budget accounting.
 
-Before deployment, publish the exact source revision/tag, embed its source link,
-build the corresponding image on `forge`, verify license/attribution and version,
-back up production Compose and database, and retain the current
-`new-api:ak47token-2026-09-07-sensenova-retry.1` image for rollback. Change only
-the application image/configuration; preserve production keys, channels,
-pricing, databases and Redis. Validate public status, source link and a bounded
-synthetic Codex request after deployment.
+## Production deployment and rollback
+
+- Deployed at 2026-09-07 09:56:38 UTC from source commit
+  `14152e0f5588ebe20d26a9ef6a5b4cc5b217ee6a` and the public release tag above.
+- Image identity on both `forge` and production:
+  `sha256:1025e7c4975ce5840f766b7c8b7421b5da52d8a7059dae4f5e2f23cb186094c7`.
+- The exact source link, required New API attribution, original-project link,
+  version and three license/notice files passed artifact verification. Public
+  status and all three source/attribution strings in initial homepage assets
+  passed after deployment. Frontend build: 27.3 s; backend build: 176.5 s.
+- Backups are under `/opt/new-api/backups/sensenova-codex-tpm-20260907/`.
+  The PostgreSQL custom-format dump passed `pg_restore --list`; SHA-256:
+  `4908ddd2c1b2f18bf73a75bb3188444c58aca137281fc636810f81f410b465ba`.
+  Compose and environment backups remain root-only. The previous
+  `new-api:ak47token-2026-09-07-sensenova-retry.1` image remains available.
+- Compose changed only the application image. The application is healthy.
+  PostgreSQL and Redis retained their 2026-08-07 start times. Channel
+  configuration checksum `52d05bc282c817eb98072ca595c9cd68` and pricing-option
+  checksum `9cddd1a0895f7f525536201e0a3097b0` matched before and after deployment.
+  No channel/key, pricing, database or Redis configuration edits were made.
+- Public Codex 0.153.4 acceptance through `https://ak47token.com` exited 0 in
+  108.58 seconds. The written file and final marker matched exactly. Three
+  Responses requests returned HTTP 200 with completed events (19.89, 47.60,
+  38.38 seconds); input/output tokens were 8509/428, 8806/237, and 9100/9.
+  Only operator-owned test credentials and synthetic content were used.
+- Temporary canary credentials/database, copied production test credential and
+  isolated application/Redis containers were removed. Build/test containers
+  were stopped; reusable dependency caches and sanitized evidence remain.
+
+Rollback: restore the backed-up Compose and run
+`docker compose --project-directory /opt/new-api -f /opt/new-api/docker-compose.yml up -d --no-deps --wait new-api`.
+This release adds no schema migration; ordinary application rollback does not
+require restoring the database dump or touching PostgreSQL/Redis.
