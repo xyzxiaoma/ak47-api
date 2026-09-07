@@ -529,6 +529,12 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	if service.IsSenseNovaAttempt(c) {
+		// Admission renewal cancels this context on lease loss. Carry it through
+		// the transport and response body so terminated work cannot continue.
+		req = req.WithContext(c.Request.Context())
+	}
+	service.MarkSenseNovaBudgetDispatched(c)
 	resp, err := relayClient.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())

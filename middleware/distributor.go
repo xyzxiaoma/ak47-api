@@ -163,7 +163,7 @@ func Distribute() func(c *gin.Context) {
 		}
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		if setupErr := SetupContextForSelectedChannel(c, channel, modelRequest.Model); setupErr != nil {
-			if setupErr.StatusCode == http.StatusServiceUnavailable {
+			if setupErr.StatusCode == http.StatusServiceUnavailable || setupErr.StatusCode == http.StatusTooManyRequests {
 				service.SetSenseNovaRetryAfterHeader(c)
 			}
 			abortWithOpenAiMessage(c, setupErr.StatusCode, setupErr.Error(), setupErr.GetErrorCode())

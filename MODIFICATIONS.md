@@ -2,6 +2,16 @@
 
 This project is a modified version of New API distributed under the GNU Affero General Public License v3.0. Upstream copyright, license, warranty, and attribution notices remain in effect.
 
+## 2026-09-07 (SenseNova Codex compatibility and admission)
+
+- Translate Responses requests to SenseNova Chat Completions, including Codex
+  function/custom tool round trips and explicit failures for incomplete streams.
+- Recognize the provider's exact `429001` TPM error and add Redis-backed
+  per-account/model admission, bounded waiting and conservative unknown-limit
+  pacing. Successful usage reconciles reservations separately from key health.
+- Preserve existing pricing, authorization groups, four-key retry limits,
+  billing settlement, AGPL licensing and New API attribution.
+
 ## 2026-08-22
 
 - Aligned automatic channel connectivity tests with the configured Chat Completions-to-Responses compatibility policy, including the existing global and per-channel pass-through gates.

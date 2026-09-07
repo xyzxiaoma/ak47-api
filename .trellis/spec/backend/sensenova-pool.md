@@ -85,7 +85,7 @@ or reset-time measurements. Do not duplicate the inventory across model pools.
 | Upstream 403 / 404 without quota evidence | Model cooling, `model_unavailable` |
 | Upstream 5xx / transport failure | Model cooling, `upstream_unavailable` |
 | Gateway billing, validation or database error | Do not classify as key quota |
-| All keys cooling | Prompt 503; scheduler still discovers due keys |
+| All keys cooling | Admission-enabled requests wait within their shared deadline; otherwise 503; scheduler still discovers due keys |
 | Only fourth key works | Reach it once, settle once; do not stop at three |
 | All four reject | Stop after four distinct attempts; bounded final retry hint |
 | Upstream Retry-After exceeds fallback | Preserve longer cooldown, including manual probes |
@@ -93,6 +93,57 @@ or reset-time measurements. Do not duplicate the inventory across model pools.
 | HTTP 200 with embedded error, malformed/empty completion | Not recovered |
 | Old success after newer failure/manual edit | Ignore stale result |
 | Probe result after its lease expires | Ignore stale result |
+
+## Responses compatibility and capacity admission
+
+- Opted-in OpenAI channels translate `/v1/responses` to upstream
+  `/v1/chat/completions`, including streaming, function calls and Codex custom
+  tool input/output replay. Preserve original tool definitions to restore
+  `custom_tool_call` items and input events. Conversion is required even when
+  global body pass-through is enabled. Unsupported stateful/compact requests
+  fail before dispatch and do not alter key health.
+- Map Responses `developer` messages to SenseNova-supported `system` messages,
+  preserving order and content. Flatten namespace tool declarations using
+  distinct deterministic aliases, restoring original namespace/name identities
+  on responses and replay. Reasoning output must carry `summary: []` even at
+  item start; do not emit `summary_text` as reasoning `content`.
+- Hosted web search is unsupported and must return an explicit client error.
+  Configure Codex `web_search = "disabled"`; do not silently drop its tools.
+- Treat exact string or numeric provider code `429001` as TPM exhaustion.
+  Unknown codes remain unknown; never classify by a broad numeric prefix.
+- Admission defaults to `deepseek-v4-pro` only. Redis state is scoped by
+  channel, key fingerprint and model, separate from health/probe state. Use
+  Redis time and atomic reservations, an owner-checked renewable in-flight
+  lease, bounded shared queue leases and a per-request wait deadline.
+- Unknown TPM defaults to one in-flight request and 60 seconds between starts
+  per key/model. This is local pacing, not a measured provider reset window.
+  Known local budgets reserve estimated prompt tokens plus an explicit output
+  ceiling, or a 4096-token allowance when absent. Reject a request exceeding
+  its configured budget without cooling an otherwise healthy key.
+- Initially admit after validated request metrics and price estimation, before
+  billing reservation. Budget-based key reselection stays in the authorized
+  channel/group and does not count as another upstream attempt. Recheck health
+  before dispatch. Share the 75-second wait deadline across retries; at most
+  32 requests per channel wait by default. Cancelled requests stop promptly.
+- Undispatched reservations are released; uncertain upstream outcomes retain
+  conservative debits. Successful measured usage reconciles only the owning
+  reservation. A probe, stale completion or another request cannot clear it.
+  Redis failures fail closed with sanitized 503 while admission is enabled.
+- Local fallback token estimates must not refund conservative reservations.
+  A long stream finishing after ledger expiry restores a fresh rolling-window
+  debit only while it still owns its lease. Lease loss cancels both dispatch
+  and response-body reads, and cleanup must preserve the cancellation.
+- Operator configuration: `SENSENOVA_ADMISSION_ENABLED`,
+  `SENSENOVA_ADMISSION_MODELS`, `SENSENOVA_TPM_LIMITS`,
+  `SENSENOVA_OUTPUT_TOKEN_ALLOWANCE`,
+  `SENSENOVA_UNKNOWN_TPM_INTERVAL_SECONDS`,
+  `SENSENOVA_ADMISSION_WAIT_SECONDS`, `SENSENOVA_ADMISSION_QUEUE_LIMIT`.
+  TPM JSON maps a model to `{"default": N, "keys": {"<fingerprint>": N}}`;
+  zero means unknown. Do not put raw credentials in configuration or logs.
+- Validate budget/queue ownership, long-stream accounting, usage correction,
+  cancellation, oversized admission, Redis failure and health independence in
+  `service/sensenova_{budget,admission}_test.go`; validate the Responses bridge
+  and terminal errors in `relay/channel/openai/sensenova_responses_test.go`.
 
 ## 5. Good / Base / Bad Cases
 

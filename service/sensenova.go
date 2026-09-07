@@ -112,6 +112,31 @@ func getSenseNovaAttempt(c *gin.Context) *senseNovaAttempt {
 }
 
 func SelectSenseNovaKey(c *gin.Context, channel *model.Channel, name string) (string, int, *types.NewAPIError) {
+	state, configErr := senseNovaAdmissionState(c, name)
+	if configErr != nil {
+		return "", 0, senseNovaAdmissionError("Invalid SenseNova admission configuration", http.StatusServiceUnavailable)
+	}
+	defer releaseSenseNovaAdmissionQueue(state)
+	for {
+		key, index, selectedErr := selectSenseNovaKeyOnce(c, channel, name)
+		if selectedErr == nil || state == nil {
+			return key, index, selectedErr
+		}
+		fresh, err := model.GetChannelById(channel.Id, true)
+		if err != nil || fresh.Status != common.ChannelStatusEnabled || !fresh.SenseNovaPool || ValidateSenseNovaPool(fresh) != nil || !containsSenseNovaModel(fresh, name) {
+			return "", 0, selectedErr
+		}
+		delay, cooling := senseNovaHealthWait(c, fresh, name)
+		if !cooling {
+			return "", 0, selectedErr
+		}
+		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay); waitErr != nil {
+			return "", 0, waitErr
+		}
+	}
+}
+
+func selectSenseNovaKeyOnce(c *gin.Context, channel *model.Channel, name string) (string, int, *types.NewAPIError) {
 	ResetSenseNovaAttempt(c)
 	unavailable := func() (string, int, *types.NewAPIError) {
 		return "", 0, types.NewErrorWithStatusCode(errors.New("SenseNova pool temporarily has no eligible key"), types.ErrorCodeGetChannelFailed, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
@@ -158,6 +183,10 @@ func SelectSenseNovaKey(c *gin.Context, channel *model.Channel, name string) (st
 }
 
 func RecordSenseNovaRelaySuccess(c *gin.Context) {
+	defer finishSenseNovaAdmissionAttempt(c)
+	if state := currentSenseNovaAdmission(c); state != nil {
+		state.successful = true
+	}
 	if a := getSenseNovaAttempt(c); a != nil {
 		a.failed = false
 		a.retryAfter = 0
@@ -170,6 +199,7 @@ func RecordSenseNovaRelaySuccess(c *gin.Context) {
 // Record failures before selecting a retry. The request-local exclusion remains
 // effective even if the database cannot persist the outcome.
 func RecordSenseNovaRelayFailure(c *gin.Context, upstream *types.NewAPIError) *types.NewAPIError {
+	defer finishSenseNovaAdmissionAttempt(c)
 	a := getSenseNovaAttempt(c)
 	if a == nil || upstream == nil {
 		return upstream
@@ -240,6 +270,10 @@ func SenseNovaAttemptLogInfo(c *gin.Context) map[string]interface{} {
 // times are lower-bound hints, not promises that future requests fit a limit.
 func SetSenseNovaRetryAfterHeader(c *gin.Context) {
 	if c.Writer.Written() || (c.Request != nil && c.Request.Context().Err() != nil) {
+		return
+	}
+	if hint := c.GetInt64("sensenova_admission_retry_after"); hint > 0 {
+		c.Header("Retry-After", strconv.FormatInt(hint, 10))
 		return
 	}
 	value, _ := c.Get(senseNovaSelectionContext)

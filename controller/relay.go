@@ -160,6 +160,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.SetEstimatePromptTokens(tokens)
 	if service.IsSenseNovaAttempt(c) {
 		c.Set("sensenova_request_metrics", senseNovaRequestMetrics(request, tokens))
+		defer service.FinishSenseNovaAdmission(c)
 	}
 
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
@@ -169,6 +170,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
+
+	if admissionErr := service.AdmitSenseNovaAttempt(c); admissionErr != nil {
+		newAPIError = admissionErr
+		return
+	}
 
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
@@ -208,6 +214,12 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
 			break
+		}
+		if retryParam.GetRetry() > 0 {
+			if admissionErr := service.AdmitSenseNovaAttempt(c); admissionErr != nil {
+				newAPIError = admissionErr
+				break
+			}
 		}
 		addUsedChannel(c, channel.Id)
 		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {

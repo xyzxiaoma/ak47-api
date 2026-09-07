@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,8 +38,9 @@ import (
 )
 
 type Adaptor struct {
-	ChannelType    int
-	ResponseFormat string
+	ChannelType        int
+	ResponseFormat     string
+	senseNovaResponses bool
 }
 
 func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
@@ -91,6 +93,7 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 
 func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 	a.ChannelType = info.ChannelType
+	a.senseNovaResponses = false
 
 	// initialize ThinkingContentInfo when thinking_to_content is enabled
 	if info.ChannelSetting.ThinkingToContent {
@@ -103,6 +106,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if a.senseNovaResponses {
+		return relaycommon.GetFullRequestURL(info.ChannelBaseUrl, "/v1/chat/completions", info.ChannelType), nil
+	}
 	if info.RelayMode == relayconstant.RelayModeRealtime {
 		if strings.HasPrefix(info.ChannelBaseUrl, "https://") {
 			baseUrl := strings.TrimPrefix(info.ChannelBaseUrl, "https://")
@@ -602,6 +608,35 @@ func detectImageMimeType(filename string) string {
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if info != nil && info.ChannelType == constant.ChannelTypeOpenAI && c != nil && c.Request != nil && service.IsSenseNovaRequest(c.Request.Context()) {
+		if info.RelayMode == relayconstant.RelayModeResponsesCompact {
+			return nil, types.NewErrorWithStatusCode(errors.New("SenseNova does not support Responses compaction"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		prepared, err := prepareSenseNovaResponsesRequest(request)
+		if err != nil {
+			return nil, types.NewErrorWithStatusCode(err, types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &prepared)
+		if err != nil {
+			// Conversion is a client capability error, never a rejected key.
+			return nil, types.NewErrorWithStatusCode(errors.New("unsupported SenseNova Responses request"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+		}
+		chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
+		if !ok {
+			return nil, types.NewErrorWithStatusCode(errors.New("invalid SenseNova request conversion"), types.ErrorCodeConvertRequestFailed, http.StatusInternalServerError, types.ErrOptionWithSkipRetry())
+		}
+		if info.IsStream {
+			chatRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
+		}
+		for i := range chatRequest.Messages {
+			if chatRequest.Messages[i].Role == "developer" {
+				chatRequest.Messages[i].Role = "system"
+			}
+		}
+		info.ReasoningEffort = chatRequest.ReasoningEffort
+		a.senseNovaResponses = true
+		return a.ConvertOpenAIRequest(c, info, chatRequest)
+	}
 	//  转换模型推理力度后缀
 	effort, originModel := reasoning.ParseOpenAIReasoningEffortFromModelSuffix(request.Model)
 	if effort != "" {
@@ -651,7 +686,11 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case relayconstant.RelayModeRerank:
 		usage, err = common_handler.RerankHandler(c, info, resp)
 	case relayconstant.RelayModeResponses:
-		if info.IsStream {
+		if a.senseNovaResponses && info.IsStream {
+			usage, err = OaiChatToResponsesStreamHandler(c, info, resp)
+		} else if a.senseNovaResponses {
+			usage, err = OaiChatToResponsesHandler(c, info, resp)
+		} else if info.IsStream {
 			usage, err = OaiResponsesStreamHandler(c, info, resp)
 		} else {
 			usage, err = OaiResponsesHandler(c, info, resp)
@@ -700,4 +739,163 @@ func (a *Adaptor) GetChannelName() string {
 	default:
 		return ChannelName
 	}
+}
+
+// prepareSenseNovaResponsesRequest represents freeform tools as ordinary Chat
+// functions. It edits decoded copies so the original Responses tools remain
+// available when translating the result back for Codex.
+func prepareSenseNovaResponsesRequest(request dto.OpenAIResponsesRequest) (dto.OpenAIResponsesRequest, error) {
+	var tools []map[string]any
+	if len(request.Tools) > 0 {
+		if err := common.Unmarshal(request.Tools, &tools); err != nil {
+			return request, errors.New("invalid SenseNova Responses tools")
+		}
+	}
+	flatTools := make([]map[string]any, 0, len(tools))
+	namespaceToolTypes := make(map[string]string)
+	for _, tool := range tools {
+		if tool["type"] != "namespace" {
+			flatTools = append(flatTools, tool)
+			continue
+		}
+		namespace, ok := tool["name"].(string)
+		children, childrenOK := tool["tools"].([]any)
+		if !ok || namespace == "" || !childrenOK || len(children) == 0 {
+			return request, errors.New("invalid SenseNova namespace tool")
+		}
+		for _, value := range children {
+			child, ok := value.(map[string]any)
+			if !ok || (child["type"] != "function" && child["type"] != "custom") {
+				return request, errors.New("SenseNova namespace supports function and custom tools only")
+			}
+			name, ok := child["name"].(string)
+			if !ok || name == "" {
+				return request, errors.New("namespace tool requires a name")
+			}
+			alias := senseNovaNamespaceToolName(namespace, name)
+			namespaceToolTypes[alias], _ = child["type"].(string)
+			child["name"] = alias
+			description, _ := child["description"].(string)
+			namespaceDescription, _ := tool["description"].(string)
+			child["description"] = namespace + "." + name + ": " + namespaceDescription + "\n" + description
+			flatTools = append(flatTools, child)
+		}
+	}
+	tools = flatTools
+	names := make(map[string]bool, len(tools))
+	for i, tool := range tools {
+		if tool["type"] == "web_search" || tool["type"] == "web_search_preview" {
+			return request, errors.New("SenseNova does not support hosted web search; set web_search = \"disabled\" in Codex")
+		}
+		name, ok := tool["name"].(string)
+		if !ok || name == "" || names[name] {
+			return request, errors.New("SenseNova tools require distinct names")
+		}
+		names[name] = true
+		switch tool["type"] {
+		case "function":
+		case "custom":
+			name, ok := tool["name"].(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return request, errors.New("custom tool requires a name")
+			}
+			tools[i] = map[string]any{
+				"type": "function", "name": name, "description": tool["description"],
+				"parameters": map[string]any{"type": "object", "properties": map[string]any{"input": map[string]any{"type": "string"}}, "required": []string{"input"}, "additionalProperties": false},
+			}
+		default:
+			return request, errors.New("SenseNova supports function and custom tools only")
+		}
+	}
+	if len(request.Tools) > 0 {
+		var err error
+		request.Tools, err = common.Marshal(tools)
+		if err != nil {
+			return request, err
+		}
+	}
+	if common.GetJsonType(request.ToolChoice) == "object" {
+		var choice map[string]any
+		if err := common.Unmarshal(request.ToolChoice, &choice); err != nil {
+			return request, errors.New("invalid SenseNova tool choice")
+		}
+		if rawNamespace, exists := choice["namespace"]; exists {
+			namespace, validNamespace := rawNamespace.(string)
+			name, validName := choice["name"].(string)
+			toolType, _ := choice["type"].(string)
+			if !validNamespace || namespace == "" || !validName || name == "" || (toolType != "function" && toolType != "custom") {
+				return request, errors.New("invalid SenseNova namespaced tool choice")
+			}
+			alias := senseNovaNamespaceToolName(namespace, name)
+			if namespaceToolTypes[alias] != toolType {
+				return request, errors.New("SenseNova namespaced tool choice must match a declared tool")
+			}
+			choice["name"] = alias
+			delete(choice, "namespace")
+		}
+		if choice["type"] == "custom" {
+			choice["type"] = "function"
+		}
+		var err error
+		request.ToolChoice, err = common.Marshal(choice)
+		if err != nil {
+			return request, err
+		}
+	}
+	if common.GetJsonType(request.Input) != "array" {
+		return request, nil
+	}
+	var items []map[string]any
+	if err := common.Unmarshal(request.Input, &items); err != nil {
+		return request, errors.New("invalid SenseNova Responses input")
+	}
+	prepared := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if item["type"] == "function_call" || item["type"] == "custom_tool_call" {
+			if namespace, ok := item["namespace"].(string); ok && namespace != "" {
+				name, ok := item["name"].(string)
+				if !ok || name == "" {
+					return request, errors.New("namespace tool call requires a name")
+				}
+				item["name"] = senseNovaNamespaceToolName(namespace, name)
+				delete(item, "namespace")
+			}
+		}
+		switch item["type"] {
+		case nil, "", "message", "function_call", "function_call_output":
+		case "custom_tool_call":
+			input, ok := item["input"].(string)
+			if !ok {
+				return request, errors.New("custom tool input must be a string")
+			}
+			arguments, err := common.Marshal(map[string]string{"input": input})
+			if err != nil {
+				return request, err
+			}
+			item["type"] = "function_call"
+			item["arguments"] = string(arguments)
+			delete(item, "input")
+		case "custom_tool_call_output":
+			item["type"] = "function_call_output"
+		case "reasoning":
+			if encrypted, ok := item["encrypted_content"].(string); ok && encrypted != "" {
+				return request, errors.New("SenseNova does not support encrypted reasoning replay")
+			}
+			// Reasoning summaries are advisory, not new user turns.
+			continue
+		default:
+			return request, errors.New("SenseNova does not support this Responses input item")
+		}
+		prepared = append(prepared, item)
+	}
+	var err error
+	request.Input, err = common.Marshal(prepared)
+	return request, err
+}
+
+// Chat tool names have no namespace field. Use a bounded, deterministic alias
+// instead of joining names ambiguously; the original request restores identity.
+func senseNovaNamespaceToolName(namespace, name string) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("%d:%s%s", len(namespace), namespace, name)))
+	return fmt.Sprintf("sn_ns_%x", digest[:16])
 }

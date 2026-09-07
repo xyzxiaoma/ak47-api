@@ -22,7 +22,7 @@ func senseNovaLimitKind(err *types.NewAPIError) string {
 		return "unknown"
 	}
 	switch string(err.GetErrorCode()) {
-	case "ModelAccountTpmRateLimitExceeded":
+	case "ModelAccountTpmRateLimitExceeded", "429001":
 		return "tpm"
 	case "ModelAccountRpmRateLimitExceeded":
 		return "rpm"
@@ -56,6 +56,11 @@ func ClassifySenseNovaFailure(err *types.NewAPIError) SenseNovaFailure {
 	}
 	if code == "insufficient_quota" || code == "insufficient_balance" {
 		return SenseNovaFailure{State: "cooling", Reason: "quota_exhausted", AccountWide: true}
+	}
+	// Embedded errors in HTTP-200 streams are surfaced as bad gateway. Exact
+	// provider limit codes still identify model capacity, independent of status.
+	if kind := senseNovaLimitKind(err); kind == "tpm" || kind == "rpm" {
+		return SenseNovaFailure{State: "cooling", Reason: "rate_limited"}
 	}
 	if err.StatusCode == http.StatusPaymentRequired || err.StatusCode == http.StatusTooManyRequests || err.StatusCode == http.StatusForbidden {
 		message := strings.ToLower(err.Error())
