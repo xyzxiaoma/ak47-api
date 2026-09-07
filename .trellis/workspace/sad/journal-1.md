@@ -135,3 +135,25 @@ Replaced stacked model cards with a responsive flat grid and deployed pricing-fl
 ### Status
 
 [OK] **Completed**
+
+
+## Session 7: SenseNova 429 reliability deployment
+
+**Date**: 2026-09-07
+**Task**: SenseNova 429 reliability deployment
+**Branch**: `codex/sensenova-key-pool`
+
+### Summary
+
+Deployed four-key bounded failover, bounded Retry-After and safe admin diagnostics. Targeted regressions and remote builds passed; production healthy with unchanged channel configuration and all 16 discounts. Historical provider rejection subtype remains unproven.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3cef8f4` | (see git log) |
+| `f95a6bb` | (see git log) |
+
+### Status
+
+[OK] **Completed**
