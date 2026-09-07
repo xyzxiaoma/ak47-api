@@ -212,3 +212,25 @@ Deployed latency diagnostics and sufficient-capacity wake correction. Official q
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: Claude accounting and real-request recovery release
+
+**Date**: 2026-09-07
+**Task**: Claude accounting and real-request recovery release
+
+### Summary
+
+Fixed JSON-decoded Claude tool estimates and leased SenseNova real-traffic recovery; bounded renewal/cleanup SQL. Preserved failure history while separating transient rate cooldown from progressive health backoff. Focused tests, race checks, independent reviews and production build passed on forge. Deployed recovery.2 from public source tag; full Claude Code 25-tool/32000/adaptive Write-Read-final workflow passed with three HTTP 200 responses in 79.42s. Retained failed recovery.1 evidence and documented 43.412s capacity wait; no stable latency SLA claimed. Verified config, data services, attribution, licenses and temporary credential cleanup.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `190029f` | (see git log) |
+| `23f55b3` | (see git log) |
+| `6bb3140` | (see git log) |
+
+### Status
+
+[OK] **Completed**
