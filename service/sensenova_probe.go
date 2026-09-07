@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -210,17 +209,35 @@ func executeSenseNovaProbe(ctx context.Context, client *http.Client, claim *mode
 }
 
 func senseNovaRetryAfter(value string, now time.Time) int64 {
-	seconds, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		if date, e := http.ParseTime(value); e == nil {
-			seconds = int64(date.Sub(now).Seconds())
-		}
-	}
-	if seconds < 0 {
+	value = strings.TrimSpace(value)
+	if value == "" {
 		return 0
 	}
-	if seconds > 86400 {
+	// Delta-seconds is unsigned decimal, not a signed integer. Accumulate
+	// with saturation so even excessively large digit strings remain bounded.
+	seconds := int64(0)
+	digits := true
+	for _, char := range value {
+		if char < '0' || char > '9' {
+			digits = false
+			break
+		}
+		seconds = seconds*10 + int64(char-'0')
+		if seconds > 86400 {
+			seconds = 86400
+		}
+	}
+	if digits {
+		return seconds
+	}
+	date, err := http.ParseTime(value)
+	if err != nil || !date.After(now) {
+		return 0
+	}
+	delay := date.Sub(now)
+	if delay >= 24*time.Hour {
 		return 86400
 	}
-	return seconds
+	// Round up: a future HTTP date must not permit retrying before that date.
+	return int64((delay + time.Second - 1) / time.Second)
 }

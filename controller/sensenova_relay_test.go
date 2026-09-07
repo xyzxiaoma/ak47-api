@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func TestSenseNovaControllerFailoverWithLegacyRetriesDisabled(t *testing.T) {
 	common.SetContextKey(c, constant.ContextKeyUsingGroup, "paid-fixture-group")
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 	require.Nil(t, middleware.SetupContextForSelectedChannel(c, channel, "glm-5.2"))
-	assert.Equal(t, 2, relayRetryBudget(c))
+	assert.Equal(t, 3, relayRetryBudget(c))
 	first := common.GetContextKeyString(c, constant.ContextKeyChannelKey)
 	info := &relaycommon.RelayInfo{OriginModelName: "glm-5.2"}
 	_, initialErr := getChannel(c, info, &service.RetryParam{Ctx: c})
@@ -65,6 +66,64 @@ func TestSenseNovaControllerFailoverWithLegacyRetriesDisabled(t *testing.T) {
 	common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now().Add(-91*time.Second))
 	safe = service.RecordSenseNovaRelayFailure(c, types.WithOpenAIError(types.OpenAIError{Message: "busy"}, 429))
 	assert.False(t, shouldRetry(c, safe, 2))
+}
+
+func TestSenseNovaControllerReachesFourthKeyAndStopsAfterFourFailures(t *testing.T) {
+	for _, lastKeySucceeds := range []bool{true, false} {
+		name := "all four rejected"
+		if lastKeySucceeds {
+			name = "fourth key succeeds"
+		}
+		t.Run(name, func(t *testing.T) {
+			channel := setupSenseNovaController(t)
+			base := "https://token.sensenova.cn"
+			channel.BaseURL = &base
+			channel.Key += "\nfixture-account-d"
+			channel.ChannelInfo.MultiKeySize = 4
+			require.NoError(t, model.DB.Save(channel).Error)
+			previous := common.RetryTimes
+			common.RetryTimes = 0
+			t.Cleanup(func() { common.RetryTimes = previous })
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			common.SetContextKey(c, constant.ContextKeyUsingGroup, "paid-fixture-group")
+			common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
+			require.Nil(t, middleware.SetupContextForSelectedChannel(c, channel, "glm-5.2"))
+			info := &relaycommon.RelayInfo{OriginModelName: "glm-5.2"}
+			retries := relayRetryBudget(c)
+			attempted := make(map[string]bool)
+			success := false
+			for attempt := 0; attempt <= retries; attempt++ {
+				selected, err := getChannel(c, info, &service.RetryParam{
+					Ctx: c, ModelName: "glm-5.2", TokenGroup: "paid-fixture-group", Retry: common.GetPointer(attempt),
+				})
+				require.Nil(t, err)
+				require.Equal(t, channel.Id, selected.Id)
+				key := common.GetContextKeyString(c, constant.ContextKeyChannelKey)
+				require.False(t, attempted[key], "a failed key must not be retried")
+				attempted[key] = true
+				assert.Equal(t, "paid-fixture-group", common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+				if lastKeySucceeds && len(attempted) == 4 {
+					service.RecordSenseNovaRelaySuccess(c)
+					success = true
+					break
+				}
+				failure := service.RecordSenseNovaRelayFailure(c, types.WithOpenAIError(types.OpenAIError{
+					Code: "ModelAccountTpmRateLimitExceeded", Message: "upstream TPM limit",
+				}, http.StatusTooManyRequests))
+				if !shouldRetry(c, failure, retries-attempt) {
+					break
+				}
+			}
+			assert.Len(t, attempted, 4, "every eligible key must get a chance within the four-key budget")
+			assert.Equal(t, lastKeySucceeds, success)
+			if !lastKeySucceeds {
+				_, err := getChannel(c, info, &service.RetryParam{Ctx: c, Retry: common.GetPointer(4)})
+				require.NotNil(t, err)
+				assert.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
+			}
+		})
+	}
 }
 
 func TestSenseNovaImportPreservesManualIdentity(t *testing.T) {

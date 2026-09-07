@@ -281,6 +281,11 @@ func ClaimSenseNovaProbe(channelID int, key, scope string, now int64, force bool
 		if scope != "" && global.State == SenseNovaCooling {
 			return ErrSenseNovaUnavailable
 		}
+		// A manual probe is not permission to bypass a provider cooldown.
+		// Otherwise a tiny successful probe could reopen this key too early.
+		if target.State == SenseNovaCooling && target.NextProbeAt > now {
+			return ErrSenseNovaUnavailable
+		}
 		if force {
 			if target.LastProbeAt > 0 && now-target.LastProbeAt < 60 {
 				return ErrSenseNovaUnavailable

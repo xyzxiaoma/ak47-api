@@ -94,6 +94,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			if c.Writer.Written() {
 				return
 			}
+			if newAPIError.StatusCode == http.StatusTooManyRequests || newAPIError.StatusCode == http.StatusServiceUnavailable {
+				service.SetSenseNovaRetryAfterHeader(c)
+			}
 			logger.LogError(c, fmt.Sprintf("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			switch relayFormat {
@@ -155,6 +158,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	relayInfo.SetEstimatePromptTokens(tokens)
+	if service.IsSenseNovaAttempt(c) {
+		c.Set("sensenova_request_metrics", senseNovaRequestMetrics(request, tokens))
+	}
 
 	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
 	if err != nil {
@@ -353,8 +359,8 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 
 func relayRetryBudget(c *gin.Context) int {
 	if service.IsSenseNovaAttempt(c) {
-		// Three total attempts, independent of legacy RetryTimes=0.
-		return 2
+		// Each of the four independent keys can be tried, even with RetryTimes=0.
+		return service.SenseNovaMaxAttempts - 1
 	}
 	return common.RetryTimes
 }
@@ -432,6 +438,12 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		if isMultiKey {
 			adminInfo["is_multi_key"] = true
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
+		}
+		if details := service.SenseNovaAttemptLogInfo(c); details != nil {
+			for key, value := range c.GetStringMap("sensenova_request_metrics") {
+				details[key] = value
+			}
+			adminInfo["sensenova"] = details
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
 		other["admin_info"] = adminInfo

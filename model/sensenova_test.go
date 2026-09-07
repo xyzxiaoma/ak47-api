@@ -255,3 +255,28 @@ func TestSenseNovaInitialModelProbeMarksAccountUsable(t *testing.T) {
 	_, err = SenseNovaKeySnapshot(c.Id, key, "kimi-k3")
 	require.NoError(t, err)
 }
+
+func TestSenseNovaManualProbeHonorsCoolingDeadline(t *testing.T) {
+	for _, scope := range []string{"", "glm-5.2"} {
+		t.Run("scope="+scope, func(t *testing.T) {
+			channel := setupSenseNovaTest(t)
+			key := "test-account-a"
+			snapshot, err := SenseNovaKeySnapshot(channel.Id, key, "glm-5.2")
+			require.NoError(t, err)
+			applied, err := RecordSenseNovaFailure(snapshot, key, scope, "rate_limited", false, 180, 1000)
+			require.NoError(t, err)
+			require.True(t, applied)
+			_, err = ClaimSenseNovaProbe(channel.Id, key, scope, 1179, true)
+			require.ErrorIs(t, err, ErrSenseNovaUnavailable, "manual testing must honor the same Retry-After as automatic recovery")
+			_, err = SenseNovaKeySnapshot(channel.Id, key, "glm-5.2")
+			require.ErrorIs(t, err, ErrSenseNovaUnavailable)
+			claim, err := ClaimSenseNovaProbe(channel.Id, key, scope, 1180, true)
+			require.NoError(t, err)
+			applied, err = FinishSenseNovaProbe(claim, true, "", false, 0, 1181)
+			require.NoError(t, err)
+			require.True(t, applied)
+			_, err = SenseNovaKeySnapshot(channel.Id, key, "glm-5.2")
+			assert.NoError(t, err, "a due successful manual probe still restores routing")
+		})
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	taskdto "github.com/QuantumNous/new-api/dto"
@@ -86,6 +87,9 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	if attempt, _ := ctx.Value(senseNovaAttemptRequestContextKey{}).(*senseNovaAttempt); attempt != nil {
+		attempt.retryAfter = senseNovaRetryAfter(resp.Header.Get("Retry-After"), time.Now())
+	}
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -118,6 +122,14 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 	}
 
 	if common.GetJsonType(errResponse.Error) == "object" {
+		if IsSenseNovaRequest(ctx) {
+			// SenseNova can reject with a code only. The generic decoder requires
+			// a message, which would otherwise erase safe limit classification.
+			var providerError types.OpenAIError
+			if common.Unmarshal(errResponse.Error, &providerError) == nil {
+				return types.WithOpenAIError(providerError, resp.StatusCode)
+			}
+		}
 		// General format error (OpenAI, Anthropic, Gemini, etc.)
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {

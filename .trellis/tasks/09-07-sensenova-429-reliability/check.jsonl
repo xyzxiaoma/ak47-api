@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/sensenova-pool.md","reason":"Verify preserved CAS, manual status, billing, streaming and sensitive-data boundaries"}
+{"file":".trellis/tasks/09-07-sensenova-429-reliability/prd.md","reason":"Check observable acceptance criteria without claiming provider limits are removed"}

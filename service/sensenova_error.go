@@ -15,6 +15,28 @@ type SenseNovaFailure struct {
 	AccountWide bool
 }
 
+// Codes are matched exactly, never inferred from free-form messages or headers.
+// Keep this diagnostic classification separate from health/account scoping.
+func senseNovaLimitKind(err *types.NewAPIError) string {
+	if err == nil || err.GetErrorType() == types.ErrorTypeNewAPIError {
+		return "unknown"
+	}
+	switch string(err.GetErrorCode()) {
+	case "ModelAccountTpmRateLimitExceeded":
+		return "tpm"
+	case "ModelAccountRpmRateLimitExceeded":
+		return "rpm"
+	case "overloaded_error":
+		return "capacity"
+	case "insufficient_quota", "insufficient_balance":
+		return "quota"
+	case "invalid_api_key", "authentication_error":
+		return "authentication"
+	default:
+		return "unknown"
+	}
+}
+
 func ClassifySenseNovaFailure(err *types.NewAPIError) SenseNovaFailure {
 	if err == nil {
 		return SenseNovaFailure{}

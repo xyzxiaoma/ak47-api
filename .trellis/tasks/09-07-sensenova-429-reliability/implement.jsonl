@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/sensenova-pool.md","reason":"Existing key identity, cooldown, retry, probe and secrecy contracts"}
+{"file":".trellis/tasks/09-07-sensenova-429-reliability/design.md","reason":"Reviewed target scope for bounded retries and safe upstream diagnostics"}
