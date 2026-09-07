@@ -1,6 +1,6 @@
 # Claude token accounting and SenseNova real-request recovery
 
-Release candidate: `ak47token-2026-09-07-sensenova-recovery.1`.
+Release candidate: `ak47token-2026-09-07-sensenova-recovery.2`.
 Modified on 2026-09-07. Deployment and public acceptance are recorded below only
 after they have been verified.
 
@@ -23,8 +23,9 @@ After a rate cooldown expires, a real request can select the key for verificatio
 without waiting for the 15-second probe scan. Selection does not mark it healthy.
 Following capacity admission, one request claims a 120-second account/model
 lease, renewed every 30 seconds while it runs. Only a successful owner can clear
-the rate failure history. Failed verification retains the existing progressive
-cooldown and any longer provider Retry-After. Cancellation and pre-dispatch
+the rate failure history. Failed rate verification retains a minimum 60-second
+cooldown and any longer provider Retry-After without escalating to health-failure
+backoff merely because the failure count increases. Cancellation and pre-dispatch
 failures release owned leases; expired or superseded owners cannot renew,
 publish results, or release a replacement owner's lease. Lease loss cancels
 the upstream context. Renewal and release SQL have 2-second deadlines, preventing
@@ -45,8 +46,8 @@ quotas. Full-context requests can still receive upstream TPM errors.
 
 This repair removes omitted token accounting and false recovery decisions. It
 does not establish a stable first-output SLA or promise zero 429s. A persistent
-real-traffic failure streak can now correctly reach the existing 300/900-second
-backoff; a tiny probe no longer silently resets it to 60 seconds.
+real-traffic failure streak remains visible until real recovery succeeds.
+Non-rate health failures retain progressive 60/300/900-second backoff.
 
 ## Validation
 
@@ -66,3 +67,22 @@ backoff; a tiny probe no longer silently resets it to 60 seconds.
 - Independent full-diff review found and fixed unbounded renewal/release SQL;
   no remaining concrete code findings were reported.
 - Image build and deployment records are pending at this draft stage.
+
+## Supplemental correction after first deployment
+
+Release `.1` was deployed at 2026-09-07T15:14:55.775800793Z. Public Claude Code
+acceptance with all 25 tools, 32,000 output tokens and adaptive thinking wrote the
+correct file, but the Read turn received 429 and then 503 with Retry-After 201.
+The complete task failed after 193.79 seconds. Tool accounting was verified live
+(18,371 estimated input versus 17,462 actual input).
+
+Preserving rate-limit failure history exposed generic health backoff: repeated
+TPM failures escalated to five and fifteen minutes. Release `.2` keeps those
+counts but uses max(60 seconds, provider Retry-After) for rate limits; other
+health failures retain progressive backoff. A regression reproduced the second
+failure deadline 1360 instead of 1120 before repair and covers repeated owned
+recovery failures plus a longer 450-second provider instruction.
+
+The first acceptance window also contained transient slow database queries
+across several tables. Their cause was not established; subsequent inspection
+showed idle connections and no continuing slow-query events.

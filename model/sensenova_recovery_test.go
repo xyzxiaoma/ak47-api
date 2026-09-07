@@ -245,3 +245,48 @@ func TestSenseNovaRequestRecoveryReclaimsExpiredLease(t *testing.T) {
 	assert.True(t, renewed, "crashed owner's cleanup must not release the replacement")
 	require.NoError(t, ReleaseSenseNovaRecovery(context.Background(), fresh, key))
 }
+
+func TestSenseNovaRateRecoveryDoesNotInheritHealthFailureBackoff(t *testing.T) {
+	channel := setupSenseNovaTest(t)
+	key := "test-account-a"
+	snapshot, err := SenseNovaKeySnapshot(channel.Id, key, "glm-5.2")
+	require.NoError(t, err)
+	applied, err := RecordSenseNovaFailure(snapshot, key, "glm-5.2", "rate_limited", false, 0, 1000)
+	require.NoError(t, err)
+	require.True(t, applied)
+	for attempt := 2; attempt <= 3; attempt++ {
+		now := int64(1000 + (attempt-1)*60)
+		snapshot, err = SenseNovaRequestSnapshot(channel.Id, key, "glm-5.2", now)
+		require.NoError(t, err)
+		claim, claimErr := ClaimSenseNovaRecovery(snapshot, key, now)
+		require.NoError(t, claimErr)
+		applied, err = RecordSenseNovaFailure(claim, key, "glm-5.2", "rate_limited", false, 0, now)
+		require.NoError(t, err)
+		require.True(t, applied)
+		require.NoError(t, ReleaseSenseNovaRecovery(context.Background(), claim, key))
+		states, stateErr := ListSenseNovaStates(channel.Id)
+		require.NoError(t, stateErr)
+		for _, state := range states {
+			if state.Scope == "glm-5.2" {
+				assert.Equal(t, attempt, state.Failures, "keep the real failure history")
+				require.Equal(t, now+60, state.NextProbeAt, "temporary rate limiting must not become a five/fifteen minute health outage")
+			}
+		}
+	}
+	snapshot, err = SenseNovaRequestSnapshot(channel.Id, key, "glm-5.2", 1180)
+	require.NoError(t, err)
+	claim, err := ClaimSenseNovaRecovery(snapshot, key, 1180)
+	require.NoError(t, err)
+	applied, err = RecordSenseNovaFailure(claim, key, "glm-5.2", "rate_limited", false, 450, 1180)
+	require.NoError(t, err)
+	require.True(t, applied)
+	require.NoError(t, ReleaseSenseNovaRecovery(context.Background(), claim, key))
+	states, err := ListSenseNovaStates(channel.Id)
+	require.NoError(t, err)
+	for _, state := range states {
+		if state.Scope == "glm-5.2" {
+			assert.Equal(t, int64(1630), state.NextProbeAt, "a longer provider Retry-After remains authoritative")
+			assert.Equal(t, 4, state.Failures)
+		}
+	}
+}

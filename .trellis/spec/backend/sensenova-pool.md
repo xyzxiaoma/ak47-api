@@ -59,7 +59,9 @@ across model pools.
 - GLM probes must pair `thinking.type: disabled` with `reasoning_effort: none`.
   Live acceptance on 2026-09-06 showed that disabled thinking alone returns 400;
   this is a probe payload compatibility error, not exhausted account credits.
-- Backoff is `max(60 / 300 / 900 seconds, Retry-After)`. Capture this header on
+- Rate-limit backoff is `max(60 seconds, Retry-After)` regardless of the retained
+  failure count; other health failures use `max(60 / 300 / 900 seconds, Retry-After)`.
+  Capture this header on
   real relay failures as well as probes; parse unsigned seconds or an HTTP date,
   ceil future fractional seconds and bound to 86400. Ignore malformed/past
   values. Both automatic and manual probes respect future cooling deadlines.
@@ -149,7 +151,7 @@ Wire tool definitions are generic JSON maps, not preconstructed Go structs.
 | Due rate cooldown | One real verifier; no mandatory tiny probe |
 | Due quota/transport/model restriction | Existing health recovery required |
 | Tiny success after TPM failure | Retain streak and real success timestamp |
-| Verification fails again | Continue 60/300/900 backoff, honoring longer Retry-After |
+| Verification fails again | Retain failure history; rate limiting uses 60 seconds, other health failures 60/300/900; honor longer Retry-After |
 | Recovery lease lost/expired | No renewal or outcome publication by stale owner |
 | Owner canceled before dispatch | Release owned lease and unsent reservation |
 | JSON tool map or typed tool | Same relevant metadata; wire payload unchanged |

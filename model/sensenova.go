@@ -204,10 +204,11 @@ func senseNovaApplyFailure(tx *gorm.DB, state *SenseNovaKeyState, reason string,
 	}
 	state.Failures++
 	delay := int64(60)
-	if state.Failures == 2 {
+	// Rate limits are window-based; retain history without escalating health backoff.
+	if state.Reason != "rate_limited" && state.Failures == 2 {
 		delay = 300
 	}
-	if state.Failures >= 3 {
+	if state.Reason != "rate_limited" && state.Failures >= 3 {
 		delay = 900
 	}
 	if retryAfter > delay {
