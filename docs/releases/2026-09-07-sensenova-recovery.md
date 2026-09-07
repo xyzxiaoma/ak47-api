@@ -1,8 +1,7 @@
 # Claude token accounting and SenseNova real-request recovery
 
-Release candidate: `ak47token-2026-09-07-sensenova-recovery.2`.
-Modified on 2026-09-07. Deployment and public acceptance are recorded below only
-after they have been verified.
+Deployed release: `ak47token-2026-09-07-sensenova-recovery.2`.
+Modified and verified on 2026-09-07.
 
 ## Changes
 
@@ -66,7 +65,11 @@ Non-rate health failures retain progressive 60/300/900-second backoff.
   normal shutdown, renewal deadline failure and bounded cleanup.
 - Independent full-diff review found and fixed unbounded renewal/release SQL;
   no remaining concrete code findings were reported.
-- Image build and deployment records are pending at this draft stage.
+- Supplemental rate-limit regression and related SenseNova model/service/controller
+  checks passed on forge (0.989s/5.653s/0.154s); independent review found no
+  concrete regression. No unrelated test suites were repeated for this policy change.
+- Production frontend and backend image build passed on forge. The frontend
+  production build completed in 27.4 seconds.
 
 ## Supplemental correction after first deployment
 
@@ -86,3 +89,43 @@ recovery failures plus a longer 450-second provider instruction.
 The first acceptance window also contained transient slow database queries
 across several tables. Their cause was not established; subsequent inspection
 showed idle connections and no continuing slow-query events.
+
+## Verified deployment and public acceptance
+
+- Source commit: `23f55b3` (original accounting/recovery repair: `190029f`).
+- Public immutable source tag:
+  <https://github.com/xyzxiaoma/ak47-api/tree/ak47token-2026-09-07-sensenova-recovery.2>.
+- Image: `new-api:ak47token-2026-09-07-sensenova-recovery.2`;
+  SHA-256 `d615993e05d028c9a6548fb6673cdbc4192567554c2cecde468ec935d3354ef3`.
+- Container started at `2026-09-07T15:42:42.262312614Z`; health and public version
+  matched. Compose changed only the image. Runtime environment hashes, the
+  environment file and PostgreSQL/Redis start times matched before and after.
+- Public initial scripts contain the exact release source link, upstream link,
+  and New API contributor attribution. All three packaged license files exist.
+- Rollback configuration and previous image record:
+  `/opt/new-api/backups/sensenova-recovery2-20260907`. The verified database dump
+  from this repair is in `/opt/new-api/backups/sensenova-recovery-20260907`.
+
+Real Claude Code 2.1.263 used `deepseek-v4-pro` through `https://ak47token.com`,
+with all 25 tools, max_tokens 32000 and adaptive thinking. It completed Write,
+Read and the exact final answer in **79.42 seconds**, exit 0. Both the file and
+answer matched `DEEPSEEK_CLAUDE_CODE_OK`. All three client HTTP requests were 200.
+
+| Turn | First semantic output from client request start | Turn duration | Result |
+| --- | ---: | ---: | --- |
+| Write | 6.089s | 12.19s | Correct file written |
+| Read | 53.231s | 54.35s | Correct file read |
+| Final answer | 9.961s | 10.28s | Exact answer |
+
+The Read turn had three failed internal attempts followed by success, including
+43.412 seconds of capacity/retry waiting. The final turn had 3.001 seconds of
+health waiting. Successful upstream attempts produced semantic output in
+3.762s, 3.132s and 2.899s after dispatch respectively. These upstream intervals
+exclude queueing and client/network overhead and are not an end-to-end SLA.
+There were no slow SQL events in this acceptance window.
+
+Input estimates were 18,375 / 18,492 / 18,556, versus actual provider inputs
+17,465 / 17,645 / 17,760. Temporary test credentials were removed and absence
+verified independently; task build/test containers were stopped. The earlier
+failed `.1` acceptance remains recorded above. This single successful workflow
+demonstrates recovery, not sustained-load reliability or zero upstream errors.
