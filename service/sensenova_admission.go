@@ -125,8 +125,9 @@ func releaseSenseNovaAdmissionQueue(state *senseNovaAdmission) {
 	state.queued = false
 }
 
-// senseNovaHealthWait never revives a key: only the existing recovery
-// scheduler or a valid concurrent success can make a cooling key eligible.
+// senseNovaHealthWait never revives a key. It waits for cooldown expiry,
+// recovery ownership, or the health scheduler; only real traffic confirms rate
+// recovery, and a tiny probe cannot erase that requirement.
 func senseNovaHealthWait(c *gin.Context, channel *model.Channel, name string) (time.Duration, bool) {
 	states, err := model.ListSenseNovaStates(channel.Id)
 	if err != nil {
@@ -145,8 +146,9 @@ func senseNovaHealthWait(c *gin.Context, channel *model.Channel, name string) (t
 		if excluded[strconv.Itoa(channel.Id)+":"+fingerprint] {
 			continue
 		}
-		cooling, invalid := false, false
+		cooling, invalid, pendingRecovery := false, false, false
 		keyDelay := time.Second
+		leaseDelay := time.Duration(0)
 		for _, state := range states {
 			if state.Fingerprint != fingerprint || (state.Scope != "" && state.Scope != name) {
 				continue
@@ -154,11 +156,23 @@ func senseNovaHealthWait(c *gin.Context, channel *model.Channel, name string) (t
 			if state.State == model.SenseNovaInvalid {
 				invalid = true
 			}
+			if candidate := time.Duration(state.LeaseUntil-now) * time.Second; candidate > leaseDelay {
+				leaseDelay = candidate
+			}
+			if (state.State == model.SenseNovaUntested || state.State == model.SenseNovaCooling) && state.Reason == "rate_limited" {
+				pendingRecovery = true
+			}
 			if state.State == model.SenseNovaCooling {
 				cooling = true
 				if candidate := time.Duration(state.NextProbeAt-now) * time.Second; candidate > keyDelay {
 					keyDelay = candidate
 				}
+			}
+		}
+		if pendingRecovery {
+			cooling = true
+			if leaseDelay > keyDelay {
+				keyDelay = leaseDelay
 			}
 		}
 		if cooling && !invalid && (!found || keyDelay < delay) {
@@ -181,6 +195,17 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 		return senseNovaAdmissionError("Invalid SenseNova admission configuration", http.StatusServiceUnavailable)
 	}
 	if state == nil {
+		if attempt.snapshot.NeedsRecovery && attempt.recovery == nil {
+			if c.Request == nil || c.Request.Context().Err() != nil || c.Writer.Written() {
+				return senseNovaAdmissionError("SenseNova recovery canceled", http.StatusServiceUnavailable)
+			}
+			snapshot, claimErr := model.ClaimSenseNovaRecovery(attempt.snapshot, attempt.key, time.Now().Unix())
+			if claimErr != nil {
+				return senseNovaAdmissionError("SenseNova recovery is unavailable", http.StatusServiceUnavailable)
+			}
+			attempt.snapshot = snapshot
+			startSenseNovaRecoveryRenewal(c, attempt)
+		}
 		return nil
 	}
 	if state.reservation != nil {
@@ -237,7 +262,7 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 			if excluded[strconv.Itoa(channel.Id)+":"+fingerprint] {
 				continue
 			}
-			snapshot, snapshotErr := model.SenseNovaKeySnapshot(channel.Id, key, request.Model)
+			snapshot, snapshotErr := model.SenseNovaRequestSnapshot(channel.Id, key, request.Model, time.Now().Unix())
 			if errors.Is(snapshotErr, model.ErrSenseNovaUnavailable) {
 				continue
 			}
@@ -261,7 +286,10 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 				continue
 			}
 			// A queued administrative edit must not race an admission into a stale key.
-			snapshot, snapshotErr = model.SenseNovaKeySnapshot(channel.Id, key, request.Model)
+			snapshot, snapshotErr = model.SenseNovaRequestSnapshot(channel.Id, key, request.Model, time.Now().Unix())
+			if snapshotErr == nil && snapshot.NeedsRecovery {
+				snapshot, snapshotErr = model.ClaimSenseNovaRecovery(snapshot, key, time.Now().Unix())
+			}
 			if snapshotErr != nil {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				_ = finishSenseNovaBudget(cleanupCtx, reservation, -1, true)
@@ -285,6 +313,7 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 			c.Set("sensenova_admission_retry_after", int64(0))
 			releaseSenseNovaAdmissionQueue(state)
 			startSenseNovaBudgetRenewal(c, state)
+			startSenseNovaRecoveryRenewal(c, attempt)
 			return nil
 		}
 		healthDelay, cooling := senseNovaHealthWait(c, channel, request.Model)
@@ -372,6 +401,15 @@ func ObserveSenseNovaUsage(c *gin.Context, usage *dto.Usage) {
 }
 
 func finishSenseNovaAdmissionAttempt(c *gin.Context) {
+	stopSenseNovaRecoveryRenewal(c)
+	if attempt := getSenseNovaAttempt(c); attempt != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		err := model.ReleaseSenseNovaRecovery(cleanupCtx, attempt.snapshot, attempt.key)
+		cancel()
+		if err != nil {
+			common.SysError("SenseNova recovery lease release failed")
+		}
+	}
 	state := currentSenseNovaAdmission(c)
 	if state == nil || state.reservation == nil {
 		return

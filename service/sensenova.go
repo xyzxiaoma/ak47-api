@@ -50,6 +50,7 @@ type senseNovaAttempt struct {
 	failed     bool
 	limitKind  string
 	retryAfter int64
+	recovery   *senseNovaRecoveryRenewal
 }
 
 // ValidateSenseNovaPool restricts the opt-in policy to its actual provider and
@@ -164,7 +165,7 @@ func selectSenseNovaKeyOnce(c *gin.Context, channel *model.Channel, name string)
 		if set[fmt.Sprintf("%d:%s", channel.Id, model.SenseNovaFingerprint(key))] {
 			continue
 		}
-		snapshot, snapshotErr := model.SenseNovaKeySnapshot(channel.Id, key, name)
+		snapshot, snapshotErr := model.SenseNovaRequestSnapshot(channel.Id, key, name, time.Now().Unix())
 		if errors.Is(snapshotErr, model.ErrSenseNovaUnavailable) {
 			continue
 		}
@@ -184,6 +185,7 @@ func selectSenseNovaKeyOnce(c *gin.Context, channel *model.Channel, name string)
 }
 
 func RecordSenseNovaRelaySuccess(c *gin.Context) {
+	stopSenseNovaRecoveryRenewal(c)
 	defer finishSenseNovaAdmissionAttempt(c)
 	if state := currentSenseNovaAdmission(c); state != nil {
 		state.successful = true
@@ -200,6 +202,7 @@ func RecordSenseNovaRelaySuccess(c *gin.Context) {
 // Record failures before selecting a retry. The request-local exclusion remains
 // effective even if the database cannot persist the outcome.
 func RecordSenseNovaRelayFailure(c *gin.Context, upstream *types.NewAPIError) *types.NewAPIError {
+	stopSenseNovaRecoveryRenewal(c)
 	defer finishSenseNovaAdmissionAttempt(c)
 	a := getSenseNovaAttempt(c)
 	if a == nil || upstream == nil {

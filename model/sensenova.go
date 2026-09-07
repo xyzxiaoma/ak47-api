@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -49,9 +50,11 @@ type SenseNovaKeyState struct {
 }
 
 type SenseNovaSnapshot struct {
-	ChannelID   int
-	Fingerprint string
-	Versions    map[string]int64
+	ChannelID     int
+	Fingerprint   string
+	Versions      map[string]int64
+	NeedsRecovery bool
+	RecoveryLease bool
 }
 
 type SenseNovaProbeClaim struct {
@@ -122,6 +125,17 @@ func senseNovaReadSnapshot(tx *gorm.DB, channelID int, key, scope string) (*Sens
 }
 
 func SenseNovaKeySnapshot(channelID int, key, model string) (*SenseNovaSnapshot, error) {
+	return senseNovaKeySnapshot(channelID, key, model, time.Now().Unix(), false)
+}
+
+// SenseNovaRequestSnapshot also selects due rate-limited keys for real-traffic
+// verification. It does not restore health or claim ownership; dispatch still
+// requires ClaimSenseNovaRecovery after capacity admission.
+func SenseNovaRequestSnapshot(channelID int, key, model string, now int64) (*SenseNovaSnapshot, error) {
+	return senseNovaKeySnapshot(channelID, key, model, now, true)
+}
+
+func senseNovaKeySnapshot(channelID int, key, model string, now int64, allowDueRecovery bool) (*SenseNovaSnapshot, error) {
 	if !IsSenseNovaModel(model) {
 		return nil, ErrSenseNovaUnavailable
 	}
@@ -137,8 +151,15 @@ func SenseNovaKeySnapshot(channelID int, key, model string) (*SenseNovaSnapshot,
 			return err
 		}
 		for _, state := range states {
-			if state.State != SenseNovaUntested && state.State != SenseNovaUsable {
+			due := allowDueRecovery && senseNovaRecoveryDue(state, now)
+			if state.State != SenseNovaUntested && state.State != SenseNovaUsable && !due {
 				return ErrSenseNovaUnavailable
+			}
+			if senseNovaNeedsRecovery(state) || due {
+				if state.LeaseUntil > now {
+					return ErrSenseNovaUnavailable
+				}
+				snapshot.NeedsRecovery = true
 			}
 		}
 		return nil
@@ -213,6 +234,13 @@ func RecordSenseNovaFailure(snapshot *SenseNovaSnapshot, key, scope, reason stri
 		if err != nil {
 			return err
 		}
+		if snapshot.RecoveryLease {
+			for _, state := range states {
+				if state.LeaseUntil <= now {
+					return ErrSenseNovaUnavailable
+				}
+			}
+		}
 		state, ok := states[scope]
 		if !ok {
 			return ErrSenseNovaUnavailable
@@ -238,6 +266,9 @@ func RecordSenseNovaSuccess(snapshot *SenseNovaSnapshot, key string, now int64) 
 		}
 		for _, state := range states {
 			if state.State == SenseNovaCooling || state.State == SenseNovaInvalid {
+				return ErrSenseNovaUnavailable
+			}
+			if (senseNovaNeedsRecovery(state) && !snapshot.RecoveryLease) || (snapshot.RecoveryLease && state.LeaseUntil <= now) {
 				return ErrSenseNovaUnavailable
 			}
 			state.State, state.Reason = SenseNovaUsable, ""
@@ -338,9 +369,8 @@ func FinishSenseNovaProbe(claim *SenseNovaProbeClaim, success bool, reason strin
 				continue
 			}
 			if success && scope == "" && (state.State == SenseNovaUntested || state.State == SenseNovaUsable) {
-				state.State, state.Reason = SenseNovaUsable, ""
-				if now > state.LastSuccessAt {
-					state.LastSuccessAt = now
+				if state.Reason != "rate_limited" {
+					state.State, state.Reason = SenseNovaUsable, ""
 				}
 			}
 			state.LeaseUntil = 0
@@ -350,11 +380,22 @@ func FinishSenseNovaProbe(claim *SenseNovaProbeClaim, success bool, reason strin
 			}
 		}
 		if success {
-			target.State, target.Reason = SenseNovaUsable, ""
-			target.LastSuccessAt, target.NextProbeAt, target.LeaseUntil, target.Failures = now, 0, 0, 0
+			// A tiny probe proves connectivity, not capacity for a real payload.
+			// Keep rate-limit history until actual traffic verifies recovery.
+			if target.Reason == "rate_limited" {
+				target.State = SenseNovaUntested
+			} else {
+				target.State, target.Reason, target.Failures = SenseNovaUsable, "", 0
+			}
+			target.NextProbeAt, target.LeaseUntil = 0, 0
 			target.Version++
 			err = tx.Save(target).Error
 		} else {
+			if target.Reason == "rate_limited" && !invalid && reason != "quota_exhausted" {
+				// A probe transport/model failure is not evidence that the
+				// preceding real-traffic rate limit has recovered.
+				reason = "rate_limited"
+			}
 			err = senseNovaApplyFailure(tx, target, reason, invalid, retryAfter, now)
 		}
 		if err != nil {

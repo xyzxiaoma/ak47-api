@@ -53,19 +53,22 @@ export function SenseNovaKeyHealth(props: { entry: KeyStatus }) {
           </div>
         ))}
       </dl>
-      {health?.model_states?.map((model) => (
-        <p key={model.model} className='text-xs break-words'>
-          {model.model}:{' '}
-          {model.state === 'invalid' ? t('Invalid credential') : t('Cooling')} ·{' '}
-          {t(getSenseNovaReasonLabel(model.reason))}
-          {model.next_probe_at > 0 && props.entry.status === 1 && (
-            <>
-              {' '}
-              · {t('Next probe')}: {formatTimestamp(model.next_probe_at)}
-            </>
-          )}
-        </p>
-      ))}
+      {health?.model_states?.map((model) => {
+        let status = t('Untested')
+        if (model.state === 'invalid') status = t('Invalid credential')
+        if (model.state === 'cooling') status = t('Cooling')
+        return (
+          <p key={model.model} className='text-xs break-words'>
+            {model.model}: {status} · {t(getSenseNovaReasonLabel(model.reason))}
+            {model.next_probe_at > 0 && props.entry.status === 1 && (
+              <>
+                {' '}
+                · {t('Next probe')}: {formatTimestamp(model.next_probe_at)}
+              </>
+            )}
+          </p>
+        )
+      })}
     </div>
   )
 }

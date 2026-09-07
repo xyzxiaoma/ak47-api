@@ -15,6 +15,8 @@ across model pools.
 - `model.SenseNovaKeyState`: unique `(channel_id, fingerprint, scope)`; blank
   scope means account-wide, otherwise one supported model. No credential column.
 - `SenseNovaKeySnapshot(channelID, key, model)` selects generations.
+- `SenseNovaRequestSnapshot(channelID, key, model, now)` also selects due
+  rate-limited keys for real-traffic verification, without modifying health.
 - `RecordSenseNovaFailure(snapshot, key, scope, reason, invalid, retryAfter, now)`
   and `RecordSenseNovaSuccess(snapshot, key, now)` use those generations.
 - `ClaimSenseNovaProbe(channelID, key, scope, now, force)` grants a 60-second
@@ -87,7 +89,7 @@ across model pools.
 | Upstream 403 / 404 without quota evidence | Model cooling, `model_unavailable` |
 | Upstream 5xx / transport failure | Model cooling, `upstream_unavailable` |
 | Gateway billing, validation or database error | Do not classify as key quota |
-| All keys cooling | Admission-enabled requests wait within their shared deadline; otherwise 503; scheduler still discovers due keys |
+| All keys cooling | Admission-enabled requests wait within their shared deadline; due rate cooldowns permit one leased real verifier; other classes retain probe recovery |
 | Only fourth key works | Reach it once, settle once; do not stop at three |
 | All four reject | Stop after four distinct attempts; bounded final retry hint |
 | Upstream Retry-After exceeds fallback | Preserve longer cooldown, including manual probes |
@@ -95,6 +97,83 @@ across model pools.
 | HTTP 200 with embedded error, malformed/empty completion | Not recovered |
 | Old success after newer failure/manual edit | Ignore stale result |
 | Probe result after its lease expires | Ignore stale result |
+
+## Real-traffic capacity recovery and Claude accounting (2026-09-07)
+
+### 1. Scope / Trigger
+
+Tiny probes can succeed when a full Claude request still exceeds upstream TPM.
+Wire tool definitions are generic JSON maps, not preconstructed Go structs.
+
+### 2. Signatures
+
+- `ClaimSenseNovaRecovery(snapshot, key, now) (*SenseNovaSnapshot, error)`.
+- `RenewSenseNovaRecovery(ctx, snapshot, key, now) (bool, error)` and
+  `ReleaseSenseNovaRecovery(ctx, snapshot, key) error`.
+- `SenseNovaSnapshot.NeedsRecovery` and `.RecoveryLease` are internal only.
+- `dto.ProcessTools([]any)` accepts typed tools and `map[string]any` through
+  relaykit's JSON wrapper; no root-module dependency is permitted.
+
+### 3. Contracts
+
+- A successful probe never writes `LastSuccessAt`; only actual traffic does.
+  Rate-limit probe success retains `Failures`, `LastFailureAt` and the
+  `rate_limited` reason, with `State=untested` pending real verification.
+  Probe transport/model failures cannot erase that pending rate history.
+- At an expired rate cooldown, request selection may nominate a verifier
+  without waiting for the scheduler. It does not reset state or lease a key.
+  Claim rechecks eligibility/deadline and takes a 120-second account/model
+  lease after budget reservation; legacy admission-disabled paths also claim.
+- Only one real verifier owns an account at once. Renew every 30 seconds and
+  cancel the upstream if ownership is lost. Stop renewal before publishing an
+  outcome, and release each still-owned generation after success, failure,
+  cancellation or a pre-dispatch billing/validation failure.
+- Renewal SQL uses a 2-second child context; normal renewal shutdown does not
+  cancel a valid retry. Lease-release SQL uses an independent 2-second cleanup
+  context so a canceled client can still release ownership without hanging on
+  an exhausted connection pool. If cleanup fails, the lease expires naturally.
+- Success may clear rate history only with valid recovery ownership. Preserve
+  cancellation through cleanup; never refund uncertain dispatched capacity.
+  Newer failures, administrator edits and expired/replaced owners take priority.
+- Keep pending model restrictions in console `model_states`; render `untested`
+  as Untested, not Cooling. Do not serialize generations or leases.
+- Tool accounting includes ordinary names/descriptions/nested input schemas
+  and web-search location. Identify web search by its versioned type, since a
+  custom tool can share its name. Do not mutate, strip or clamp client tools.
+
+### 4. Validation & Error Matrix
+
+| Case | Result |
+| --- | --- |
+| Future rate cooldown, invalid key or manual disable | No request claim |
+| Due rate cooldown | One real verifier; no mandatory tiny probe |
+| Due quota/transport/model restriction | Existing health recovery required |
+| Tiny success after TPM failure | Retain streak and real success timestamp |
+| Verification fails again | Continue 60/300/900 backoff, honoring longer Retry-After |
+| Recovery lease lost/expired | No renewal or outcome publication by stale owner |
+| Owner canceled before dispatch | Release owned lease and unsent reservation |
+| JSON tool map or typed tool | Same relevant metadata; wire payload unchanged |
+
+### 5. Good / Base / Bad Cases
+
+Good: real 17k-token traffic, not an 8-token probe, confirms capacity recovery.
+Base: ordinary healthy-key routing and unknown-TPM pacing remain unchanged.
+Bad: classify a successful tiny probe as full recovery, or interpret four keys
+as four independently known provider quotas.
+
+### 6. Tests Required
+
+Use JSON-decoded Claude requests to assert tool count/text and unchanged wire
+payload. Model/service tests cover exclusive claims, cooldown boundaries,
+failure classes, renewal, cancellation, stale cleanup and successful recovery.
+Console tests retain pending model state while excluding private lease fields.
+Run the independent relaykit build and focused race-sensitive recovery checks.
+
+### 7. Wrong vs Correct
+
+Wrong: `FinishSenseNovaProbe(success)` sets `Failures=0` and `LastSuccessAt=now`.
+Correct: preserve traffic history; use `ClaimSenseNovaRecovery` and a successful
+real request to reset rate state, then release only its owned generations.
 
 ## Responses compatibility and capacity admission
 

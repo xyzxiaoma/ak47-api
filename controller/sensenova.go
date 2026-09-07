@@ -38,7 +38,8 @@ func projectSenseNovaHealth(states []model.SenseNovaKeyState) map[string]*SenseN
 			health.NextProbeAt = state.NextProbeAt
 			continue
 		}
-		if state.State == model.SenseNovaCooling || state.State == model.SenseNovaInvalid {
+		if state.State == model.SenseNovaCooling || state.State == model.SenseNovaInvalid ||
+			(state.State == model.SenseNovaUntested && state.Reason == "rate_limited") {
 			health.ModelStates = append(health.ModelStates, SenseNovaModelHealth{
 				Model: state.Scope, State: state.State, Reason: state.Reason, NextProbeAt: state.NextProbeAt,
 			})

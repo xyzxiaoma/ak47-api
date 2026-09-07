@@ -62,7 +62,7 @@ func TestSenseNovaCooldownRecoveryAndSharedScope(t *testing.T) {
 	for _, state := range states {
 		if state.Scope == "" && state.Fingerprint == SenseNovaFingerprint(key) {
 			assert.Equal(t, SenseNovaUsable, state.State)
-			assert.Equal(t, int64(2263), state.LastSuccessAt)
+			assert.Zero(t, state.LastSuccessAt, "probe success is not real traffic")
 			assert.Zero(t, state.NextProbeAt)
 		}
 	}
@@ -249,7 +249,7 @@ func TestSenseNovaInitialModelProbeMarksAccountUsable(t *testing.T) {
 	require.Len(t, states, 2)
 	for _, state := range states {
 		assert.Equal(t, SenseNovaUsable, state.State, "both the model and account have successful health evidence")
-		assert.Equal(t, int64(1001), state.LastSuccessAt)
+		assert.Zero(t, state.LastSuccessAt, "initial probe must not manufacture a traffic timestamp")
 		assert.Zero(t, state.LeaseUntil)
 	}
 	_, err = SenseNovaKeySnapshot(c.Id, key, "kimi-k3")

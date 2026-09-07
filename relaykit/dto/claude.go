@@ -420,7 +420,7 @@ func (c *ClaudeRequest) GetEfforts() string {
 	return ""
 }
 
-// ProcessTools 处理工具列表，支持类型断言
+// ProcessTools handles typed tools and generic maps decoded from client JSON.
 func ProcessTools(tools []any) ([]*Tool, []*ClaudeWebSearchTool) {
 	var normalTools []*Tool
 	var webSearchTools []*ClaudeWebSearchTool
@@ -428,13 +428,34 @@ func ProcessTools(tools []any) ([]*Tool, []*ClaudeWebSearchTool) {
 	for _, tool := range tools {
 		switch t := tool.(type) {
 		case *Tool:
-			normalTools = append(normalTools, t)
+			if t != nil {
+				normalTools = append(normalTools, t)
+			}
 		case *ClaudeWebSearchTool:
-			webSearchTools = append(webSearchTools, t)
+			if t != nil {
+				webSearchTools = append(webSearchTools, t)
+			}
 		case Tool:
 			normalTools = append(normalTools, &t)
 		case ClaudeWebSearchTool:
 			webSearchTools = append(webSearchTools, &t)
+		case map[string]any:
+			if t == nil {
+				continue
+			}
+			// Classify by the versioned type: a custom tool may also be named web_search.
+			toolType, _ := t["type"].(string)
+			if strings.HasPrefix(toolType, "web_search_") {
+				searchTool, err := kitutil.Any2Type[ClaudeWebSearchTool](t)
+				if err == nil {
+					webSearchTools = append(webSearchTools, &searchTool)
+				}
+				continue
+			}
+			normalTool, err := kitutil.Any2Type[Tool](t)
+			if err == nil {
+				normalTools = append(normalTools, &normalTool)
+			}
 		default:
 			// 未知类型，跳过
 			continue

@@ -54,6 +54,24 @@ func callSenseNovaManage(t *testing.T, request MultiKeyManageRequest, role int) 
 	return recorder, response.Success
 }
 
+func TestSenseNovaConsoleIncludesPendingModelRecovery(t *testing.T) {
+	states := []model.SenseNovaKeyState{
+		{Fingerprint: "fingerprint", State: model.SenseNovaUsable, LastSuccessAt: 100},
+		{Fingerprint: "fingerprint", Scope: "deepseek-v4-pro", State: model.SenseNovaUntested,
+			Reason: "rate_limited", Failures: 2, LastSuccessAt: 90, LeaseUntil: 1000, Version: 7},
+	}
+	health := projectSenseNovaHealth(states)["fingerprint"]
+	require.NotNil(t, health)
+	require.Len(t, health.ModelStates, 1, "pending capacity verification must not disappear after a tiny probe")
+	assert.Equal(t, model.SenseNovaUntested, health.ModelStates[0].State)
+	assert.Equal(t, "rate_limited", health.ModelStates[0].Reason)
+	assert.Equal(t, int64(100), health.LastSuccessAt)
+	body, err := common.Marshal(health)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "lease")
+	assert.NotContains(t, string(body), "version")
+}
+
 func TestSenseNovaConsoleHealthAndOpaqueIdentity(t *testing.T) {
 	channel := setupSenseNovaController(t)
 	keys := channel.GetKeys()
