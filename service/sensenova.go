@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -119,23 +121,112 @@ func SelectSenseNovaKey(c *gin.Context, channel *model.Channel, name string) (st
 		return "", 0, senseNovaAdmissionError("Invalid SenseNova admission configuration", http.StatusServiceUnavailable)
 	}
 	defer releaseSenseNovaAdmissionQueue(state)
-	for {
-		key, index, selectedErr := selectSenseNovaKeyOnce(c, channel, name)
-		if selectedErr == nil || state == nil {
-			return key, index, selectedErr
+	key, index, selectedErr := selectSenseNovaKeyOnce(c, channel, name)
+	if selectedErr == nil || state == nil {
+		return key, index, selectedErr
+	}
+	if c.Request == nil || c.Request.Context().Err() != nil || c.Writer.Written() {
+		return "", 0, senseNovaAdmissionError("SenseNova admission canceled", http.StatusServiceUnavailable)
+	}
+	fresh, err := model.GetChannelById(channel.Id, true)
+	if err != nil || fresh.Status != common.ChannelStatusEnabled || !fresh.SenseNovaPool || ValidateSenseNovaPool(fresh) != nil || !containsSenseNovaModel(fresh, name) {
+		return "", 0, selectedErr
+	}
+	pending, err := senseNovaPendingHealthCandidates(c, fresh, name)
+	if err != nil {
+		return "", 0, selectedErr
+	}
+	remaining := time.Until(state.deadline)
+	delay := time.Duration(0)
+	keyCount := len(fresh.GetKeys())
+	if keyCount == 0 {
+		return "", 0, selectedErr
+	}
+	start := c.GetInt("sensenova_rotation_start") % keyCount
+	sort.SliceStable(pending, func(i, j int) bool {
+		return (pending[i].index-start+keyCount)%keyCount < (pending[j].index-start+keyCount)%keyCount
+	})
+	for _, candidate := range pending {
+		if delay == 0 || candidate.wait < delay {
+			delay = candidate.wait
 		}
-		fresh, err := model.GetChannelById(channel.Id, true)
-		if err != nil || fresh.Status != common.ChannelStatusEnabled || !fresh.SenseNovaPool || ValidateSenseNovaPool(fresh) != nil || !containsSenseNovaModel(fresh, name) {
-			return "", 0, selectedErr
+		if remaining <= 0 || candidate.minimum > remaining {
+			continue
 		}
-		delay, cooling := senseNovaHealthWait(c, fresh, name)
-		if !cooling {
-			return "", 0, selectedErr
-		}
-		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay, SenseNovaWaitHealth); waitErr != nil {
-			return "", 0, waitErr
+		// This nominates an identity only. Metrics are parsed next, and Admit
+		// must reserve capacity and replace this unowned snapshot before any
+		// dispatch. Waiting here would hide a longer request-size penalty.
+		number := c.GetInt(senseNovaAttemptCountContext) + 1
+		c.Set(senseNovaAttemptCountContext, number)
+		attempt := &senseNovaAttempt{snapshot: &model.SenseNovaSnapshot{ChannelID: fresh.Id, Fingerprint: candidate.fingerprint}, key: candidate.key, model: name, number: number}
+		c.Set(senseNovaAttemptContext, attempt)
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), senseNovaAttemptRequestContextKey{}, attempt))
+		return candidate.key, candidate.index, nil
+	}
+	if delay > 0 {
+		c.Set("sensenova_admission_retry_after", min(int64(math.Ceil(delay.Seconds())), int64(86400)))
+	}
+	return "", 0, selectedErr
+}
+
+type senseNovaPendingHealthCandidate struct {
+	key, fingerprint string
+	index            int
+	wait, minimum    time.Duration
+}
+
+// A health lease can finish early, but a future cooldown cannot. Keep their
+// bounds separate so request-size penalties can be combined before waiting.
+func senseNovaPendingHealthCandidates(c *gin.Context, channel *model.Channel, name string) ([]senseNovaPendingHealthCandidate, error) {
+	states, err := model.ListSenseNovaStates(channel.Id)
+	if err != nil {
+		return nil, err
+	}
+	byFingerprint := make(map[string][]model.SenseNovaKeyState)
+	for _, state := range states {
+		if state.Scope == "" || state.Scope == name {
+			byFingerprint[state.Fingerprint] = append(byFingerprint[state.Fingerprint], state)
 		}
 	}
+	excludedValue, _ := c.Get(senseNovaExcludedContext)
+	excluded, _ := excludedValue.(map[string]bool)
+	var candidates []senseNovaPendingHealthCandidate
+	now := time.Now().Unix()
+	for index, key := range channel.GetKeys() {
+		if status, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok && status != common.ChannelStatusEnabled {
+			continue
+		}
+		fingerprint := model.SenseNovaFingerprint(key)
+		if excluded[strconv.Itoa(channel.Id)+":"+fingerprint] {
+			continue
+		}
+		cooling, invalid, pendingRecovery := false, false, false
+		fixed, lease := time.Duration(0), time.Duration(0)
+		for _, state := range byFingerprint[fingerprint] {
+			invalid = invalid || state.State == model.SenseNovaInvalid
+			lease = max(lease, time.Duration(state.LeaseUntil-now)*time.Second)
+			if (state.State == model.SenseNovaUntested || state.State == model.SenseNovaCooling) && state.Reason == "rate_limited" {
+				pendingRecovery = true
+			}
+			if state.State == model.SenseNovaCooling {
+				cooling = true
+				fixed = max(fixed, time.Duration(state.NextProbeAt-now)*time.Second)
+			}
+		}
+		if invalid || (!cooling && !pendingRecovery) {
+			continue
+		}
+		wait := max(time.Second, fixed)
+		if pendingRecovery {
+			wait = max(wait, lease)
+		}
+		minimum := wait
+		if pendingRecovery && lease > fixed {
+			minimum = fixed
+		}
+		candidates = append(candidates, senseNovaPendingHealthCandidate{key: key, fingerprint: fingerprint, index: index, wait: wait, minimum: minimum})
+	}
+	return candidates, nil
 }
 
 func selectSenseNovaKeyOnce(c *gin.Context, channel *model.Channel, name string) (string, int, *types.NewAPIError) {
@@ -155,13 +246,21 @@ func selectSenseNovaKeyOnce(c *gin.Context, channel *model.Channel, name string)
 	if len(keys) == 0 {
 		return unavailable()
 	}
+	hints, hintErr := model.SenseNovaRoutingCandidates(fresh, name, time.Now().Unix())
+	if hintErr != nil {
+		return unavailable()
+	}
 	value, _ := senseNovaOffsets.LoadOrStore(channel.Id, &atomic.Uint64{})
 	start := int(value.(*atomic.Uint64).Add(1)-1) % len(keys)
+	c.Set("sensenova_rotation_start", start)
 	excluded, _ := c.Get(senseNovaExcludedContext)
 	set, _ := excluded.(map[string]bool)
 	for i := 0; i < len(keys); i++ {
 		index := (start + i) % len(keys)
 		key := keys[index]
+		if !hints[model.SenseNovaFingerprint(key)].Available {
+			continue
+		}
 		if set[fmt.Sprintf("%d:%s", channel.Id, model.SenseNovaFingerprint(key))] {
 			continue
 		}

@@ -232,6 +232,32 @@ real request to reset rate state, then release only its owned generations.
   `service/sensenova_{budget,admission}_test.go`; validate the Responses bridge
   and terminal errors in `relay/channel/openai/sensenova_responses_test.go`.
 
+### Workload capacity routing
+
+- Admission ranks recent same-shape successes before fresh keys, then recoveries;
+  preserve rotation within tiers and allow fresh keys when verified keys are busy.
+  Read health eligibility as a batched hint, then recheck the selected key with
+  the authoritative snapshot and recovery claim before dispatch.
+- Scope Redis evidence by channel, fingerprint, exact model and numeric input /
+  output size class. Distinguish absent and zero ceilings. Evidence normally
+  expires after 15 minutes without read refresh, retaining a longer active
+  Retry-After until its deadline. Tiny probes and unrelated shapes cannot erase
+  a large workload's TPM rejection. Do not store credentials or request content.
+- Only a live dispatched budget owner can publish an outcome, once per owner.
+  Same-shape TPM penalties are 60/120/240/300 seconds, never shorter than bounded
+  provider Retry-After. Unknown provider quotas remain unknown.
+- One renewable channel/model lease bounds concurrent recovery across instances.
+  Preserve all four distinct attempts, including recovery attempts; stopping
+  after one failed recovery can hide a fourth key that would succeed.
+- Initial pending-key nomination is not dispatch permission. Evaluate health,
+  shape penalties and fixed budget waits together after request metrics exist.
+  Fail promptly with Retry-After when no candidate can recover within the shared
+  deadline. Active leases may release early; completed pacing cannot. Normal
+  renewal shutdown must not cancel an otherwise valid client request.
+- Cover fourth-key recovery success, added-key fairness, expiring observations,
+  long fixed waits, combined health/shape penalties, canceled/unsent work, stale
+  owners and pool lease contention in the capacity routing/store regressions.
+
 ### Request latency diagnostics
 
 - Record only opted-in traffic under `admin_info.sensenova_latency`. Keep

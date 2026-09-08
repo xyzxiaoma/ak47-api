@@ -65,15 +65,20 @@ for _, member in ipairs(expired) do
 end
 local active = redis.call('GET', KEYS[5])
 if active and string.sub(active, 1, string.len(id) + 1) == id .. ':' then
-  return {1, 0, active}
+  if ARGV[8] == '0' then return {0, 0, '', 0} end
+  return {1, 0, active, 0}
 end
-local wait = 0
+local wait, fixed = 0, 0
 if active then wait = math.max(1, redis.call('PTTL', KEYS[5])) end
 if cap == 0 and redis.call('EXISTS', KEYS[6]) == 1 then
-  wait = math.max(wait, 1, redis.call('PTTL', KEYS[6]))
+  fixed = math.max(1, redis.call('PTTL', KEYS[6]))
+  wait = math.max(wait, fixed)
 end
 local existing = redis.call('ZSCORE', KEYS[1], id)
-if existing then wait = math.max(wait, tonumber(existing) - now) end
+if existing then
+  wait = math.max(wait, tonumber(existing) - now)
+  if redis.call('HEXISTS', KEYS[4], id) == 1 then fixed = math.max(fixed, tonumber(existing) - now) end
+end
 local entries = redis.call('ZRANGE', KEYS[1], 0, -1, 'WITHSCORES')
 if #entries >= 8192 then
   if #entries > 0 then wait = math.max(wait, tonumber(entries[2]) - now) end
@@ -93,7 +98,35 @@ if cap > 0 then
     remaining = remaining - debit
   end
 end
-if wait > 0 then return {0, wait, ''} end
+if active then
+  -- Active/unfinished estimates can still reconcile or be released unused.
+  -- Only completed debits establish an immutable lower bound while a lease
+  -- is active; subtract safely and keep the sufficient rolling expiry.
+  local remaining = cap - estimate
+  local finishedCount, oldestFinished = 0, 0
+  for i = #entries - 1, 1, -2 do
+    if redis.call('HEXISTS', KEYS[4], entries[i]) == 1 then
+      finishedCount = finishedCount + 1
+      oldestFinished = tonumber(entries[i + 1])
+      if cap > 0 and remaining then
+        local debit = tonumber(redis.call('HGET', KEYS[2], entries[i]) or '0')
+        if debit > remaining then
+          fixed = math.max(fixed, oldestFinished - now)
+          remaining = nil
+        else
+          remaining = remaining - debit
+        end
+      end
+    end
+  end
+  if finishedCount >= 4096 then fixed = math.max(fixed, oldestFinished - now) end
+else
+  fixed = wait
+end
+if wait > 0 then return {0, wait, '', fixed} end
+-- Pending health checks need the same bounds without temporarily owning or
+-- consuming capacity. Expired-entry cleanup above is safe for both modes.
+if ARGV[8] == '0' then return {0, 0, '', 0} end
 local retention = window
 if cap == 0 then retention = math.max(window, interval) end
 redis.call('ZADD', KEYS[1], now + retention, id)
@@ -107,7 +140,7 @@ for i = 1, 4 do
 end
 redis.call('SET', KEYS[5], candidate, 'PX', lease)
 if cap == 0 then redis.call('SET', KEYS[6], candidate, 'PX', interval) end
-return {1, 0, candidate}
+return {1, 0, candidate, 0}
 `)
 
 var senseNovaBudgetFinishScript = redis.NewScript(`
@@ -163,14 +196,33 @@ return 1
 `)
 
 func reserveSenseNovaBudget(ctx context.Context, request senseNovaBudgetRequest, policy senseNovaBudgetPolicy) (*senseNovaBudgetReservation, time.Duration, error) {
+	reservation, wait, _, err := reserveSenseNovaBudgetWithWait(ctx, request, policy)
+	return reservation, wait, err
+}
+
+// fixedMinimum excludes waits that an active request may shorten by finishing
+// or reconciling usage. Unknown start pacing remains fixed for dispatched work;
+// an explicitly unused reservation can still release its pacing on cleanup.
+func reserveSenseNovaBudgetWithWait(ctx context.Context, request senseNovaBudgetRequest, policy senseNovaBudgetPolicy) (*senseNovaBudgetReservation, time.Duration, time.Duration, error) {
+	return senseNovaBudgetAdmission(ctx, request, policy, true)
+}
+
+// readSenseNovaBudgetWait shares validation and atomic wait calculations with
+// admission, but never creates or extends a reservation, pace, or debit.
+func readSenseNovaBudgetWait(ctx context.Context, request senseNovaBudgetRequest, policy senseNovaBudgetPolicy) (time.Duration, time.Duration, error) {
+	_, wait, fixed, err := senseNovaBudgetAdmission(ctx, request, policy, false)
+	return wait, fixed, err
+}
+
+func senseNovaBudgetAdmission(ctx context.Context, request senseNovaBudgetRequest, policy senseNovaBudgetPolicy, reserve bool) (*senseNovaBudgetReservation, time.Duration, time.Duration, error) {
 	if common.RDB == nil {
-		return nil, 0, errSenseNovaBudgetUnavailable
+		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
 	if request.ChannelID <= 0 || request.Fingerprint == "" || request.Model == "" || request.ID == "" ||
 		request.PromptTokens < 0 || request.OutputTokens < 0 || policy.OutputAllowance < 0 ||
 		policy.TokensPerMinute < 0 || policy.TokensPerMinute > senseNovaBudgetMaxExactTokens ||
 		policy.Window <= 0 || policy.Lease <= 0 || (policy.TokensPerMinute == 0 && policy.Interval <= 0) {
-		return nil, 0, errors.New("invalid sensenova admission policy or request")
+		return nil, 0, 0, errors.New("invalid sensenova admission policy or request")
 	}
 	var estimate int64
 	if policy.TokensPerMinute > 0 {
@@ -179,39 +231,47 @@ func reserveSenseNovaBudget(ctx context.Context, request senseNovaBudgetRequest,
 			output = request.OutputTokens
 		}
 		if request.PromptTokens > policy.TokensPerMinute || output > policy.TokensPerMinute-request.PromptTokens {
-			return nil, 0, errSenseNovaBudgetTooLarge
+			return nil, 0, 0, errSenseNovaBudgetTooLarge
 		}
 		estimate = request.PromptTokens + output
 	}
-	// Length prefixes prevent delimiter collisions; only non-secret identifiers
-	// enter this hash, and Redis stores no credentials, model names or request IDs.
-	scope := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", request.ChannelID, len(request.Fingerprint), request.Fingerprint, request.Model)))
-	base := fmt.Sprintf("sensenova:budget:{%x}:", scope)
+	base := senseNovaBudgetBaseKey(request)
 	keys := []string{base + "expiry", base + "debits", base + "owners", base + "finished", base + "lease", base + "pace"}
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(request.ID)))
-	var nonce [16]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, 0, errSenseNovaBudgetUnavailable
+	owner, reserveValue := "", 0
+	if reserve {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return nil, 0, 0, errSenseNovaBudgetUnavailable
+		}
+		owner, reserveValue = fmt.Sprintf("%s:%x", id, nonce), 1
 	}
-	owner := fmt.Sprintf("%s:%x", id, nonce)
 	result, err := senseNovaBudgetReserveScript.Run(ctx, common.RDB, keys, id, owner, policy.TokensPerMinute, estimate,
-		senseNovaBudgetMilliseconds(policy.Window), senseNovaBudgetMilliseconds(policy.Interval), senseNovaBudgetMilliseconds(policy.Lease)).Slice()
+		senseNovaBudgetMilliseconds(policy.Window), senseNovaBudgetMilliseconds(policy.Interval), senseNovaBudgetMilliseconds(policy.Lease), reserveValue).Slice()
 	if err != nil {
-		return nil, 0, errSenseNovaBudgetUnavailable
+		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
-	if len(result) != 3 {
-		return nil, 0, errSenseNovaBudgetUnavailable
+	if len(result) != 4 {
+		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
 	status, statusOK := result[0].(int64)
 	wait, waitOK := result[1].(int64)
 	storedOwner, ownerOK := result[2].(string)
-	if !statusOK || !waitOK || !ownerOK {
-		return nil, 0, errSenseNovaBudgetUnavailable
+	fixed, fixedOK := result[3].(int64)
+	if !statusOK || !waitOK || !ownerOK || !fixedOK {
+		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
 	if status == 0 {
-		return nil, time.Duration(wait) * time.Millisecond, nil
+		return nil, time.Duration(wait) * time.Millisecond, time.Duration(fixed) * time.Millisecond, nil
 	}
-	return &senseNovaBudgetReservation{keys: keys, id: id, owner: storedOwner, lease: policy.Lease, window: policy.Window, estimate: estimate}, 0, nil
+	return &senseNovaBudgetReservation{keys: keys, id: id, owner: storedOwner, lease: policy.Lease, window: policy.Window, estimate: estimate}, 0, 0, nil
+}
+
+func senseNovaBudgetBaseKey(request senseNovaBudgetRequest) string {
+	// Length prefixes prevent delimiter collisions; only non-secret identifiers
+	// enter this hash, and Redis stores no credentials, model names or request IDs.
+	scope := sha256.Sum256([]byte(fmt.Sprintf("%d:%d:%s:%s", request.ChannelID, len(request.Fingerprint), request.Fingerprint, request.Model)))
+	return fmt.Sprintf("sensenova:budget:{%x}:", scope)
 }
 
 func finishSenseNovaBudget(ctx context.Context, reservation *senseNovaBudgetReservation, actualTokens int64, unused bool) error {

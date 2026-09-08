@@ -21,19 +21,21 @@ import (
 const senseNovaAdmissionContextKey = "sensenova_admission"
 
 type senseNovaAdmission struct {
-	config        *senseNovaAdmissionConfig
-	id            string
-	deadline      time.Time
-	channelID     int
-	queued        bool
-	reservation   *senseNovaBudgetReservation
-	dispatched    bool
-	successful    bool
-	actualTokens  int64
-	parentContext context.Context
-	stopRenew     context.CancelFunc
-	cancelRequest context.CancelFunc
-	renewDone     chan struct{}
+	config                *senseNovaAdmissionConfig
+	id                    string
+	deadline              time.Time
+	channelID             int
+	queued                bool
+	reservation           *senseNovaBudgetReservation
+	dispatched            bool
+	successful            bool
+	actualTokens          int64
+	parentContext         context.Context
+	stopRenew             context.CancelFunc
+	cancelRequest         context.CancelFunc
+	renewDone             chan struct{}
+	capacityRequest       senseNovaBudgetRequest
+	capacityRecoveryOwner string
 }
 
 func senseNovaAdmissionState(c *gin.Context, name string) (*senseNovaAdmission, error) {
@@ -129,58 +131,75 @@ func releaseSenseNovaAdmissionQueue(state *senseNovaAdmission) {
 // recovery ownership, or the health scheduler; only real traffic confirms rate
 // recovery, and a tiny probe cannot erase that requirement.
 func senseNovaHealthWait(c *gin.Context, channel *model.Channel, name string) (time.Duration, bool) {
-	states, err := model.ListSenseNovaStates(channel.Id)
-	if err != nil {
-		return 0, false
-	}
-	excludedValue, _ := c.Get(senseNovaExcludedContext)
-	excluded, _ := excludedValue.(map[string]bool)
-	delay := time.Duration(0)
-	found := false
-	now := time.Now().Unix()
-	for index, key := range channel.GetKeys() {
-		if status, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok && status != common.ChannelStatusEnabled {
-			continue
-		}
-		fingerprint := model.SenseNovaFingerprint(key)
-		if excluded[strconv.Itoa(channel.Id)+":"+fingerprint] {
-			continue
-		}
-		cooling, invalid, pendingRecovery := false, false, false
-		keyDelay := time.Second
-		leaseDelay := time.Duration(0)
-		for _, state := range states {
-			if state.Fingerprint != fingerprint || (state.Scope != "" && state.Scope != name) {
-				continue
-			}
-			if state.State == model.SenseNovaInvalid {
-				invalid = true
-			}
-			if candidate := time.Duration(state.LeaseUntil-now) * time.Second; candidate > leaseDelay {
-				leaseDelay = candidate
-			}
-			if (state.State == model.SenseNovaUntested || state.State == model.SenseNovaCooling) && state.Reason == "rate_limited" {
-				pendingRecovery = true
-			}
-			if state.State == model.SenseNovaCooling {
-				cooling = true
-				if candidate := time.Duration(state.NextProbeAt-now) * time.Second; candidate > keyDelay {
-					keyDelay = candidate
-				}
-			}
-		}
-		if pendingRecovery {
-			cooling = true
-			if leaseDelay > keyDelay {
-				keyDelay = leaseDelay
-			}
-		}
-		if cooling && !invalid && (!found || keyDelay < delay) {
-			delay = keyDelay
-			found = true
-		}
-	}
+	delay, found, _ := senseNovaHealthCapacityWait(c, channel, name, nil, nil)
 	return delay, found
+}
+
+// Available candidates already have size/budget wait hints. Do not replace
+// their capacity penalties with the one-second health recovery polling hint.
+func senseNovaHealthCapacityWait(c *gin.Context, channel *model.Channel, name string, available map[string]bool, request *senseNovaBudgetRequest) (time.Duration, bool, bool) {
+	pending, err := senseNovaPendingHealthCandidates(c, channel, name)
+	if err != nil {
+		return 0, false, false
+	}
+	candidates := make([]senseNovaPendingHealthCandidate, 0, len(pending))
+	requests := make([]senseNovaBudgetRequest, 0, len(pending))
+	for _, candidate := range pending {
+		if available[candidate.fingerprint] {
+			continue
+		}
+		candidates = append(candidates, candidate)
+		if request != nil {
+			candidateRequest := *request
+			candidateRequest.Fingerprint = candidate.fingerprint
+			requests = append(requests, candidateRequest)
+		}
+	}
+	if request != nil && len(requests) > 0 {
+		observations, readErr := readSenseNovaCapacity(c.Request.Context(), requests)
+		if readErr != nil {
+			return 0, false, false
+		}
+		for i, observation := range observations {
+			candidates[i].wait = max(candidates[i].wait, observation.RetryAfter)
+			candidates[i].minimum = max(candidates[i].minimum, observation.RetryAfter)
+		}
+		if state := currentSenseNovaAdmission(c); state != nil {
+			viable := candidates[:0]
+			for i, candidate := range candidates {
+				// A health owner may finish early, but cannot erase fixed
+				// pacing. Inspect the budget without acquiring an unsent lease.
+				wait, minimum, budgetErr := readSenseNovaBudgetWait(c.Request.Context(), requests[i], state.config.policy(candidate.fingerprint))
+				if errors.Is(budgetErr, errSenseNovaBudgetTooLarge) {
+					continue
+				}
+				if budgetErr != nil {
+					return 0, false, false
+				}
+				candidate.wait = max(candidate.wait, wait)
+				candidate.minimum = max(candidate.minimum, minimum)
+				viable = append(viable, candidate)
+			}
+			candidates = viable
+		}
+	}
+	delay := time.Duration(0)
+	mayReleaseEarly := false
+	remaining := time.Duration(0)
+	if state := currentSenseNovaAdmission(c); state != nil {
+		remaining = time.Until(state.deadline)
+	}
+	for _, candidate := range candidates {
+		if delay == 0 || candidate.wait < delay {
+			delay = candidate.wait
+		}
+		if candidate.minimum < candidate.wait && candidate.minimum < remaining {
+			// A live verifier may finish early only after this key's fixed
+			// health AND request-size cooldowns permit another admission.
+			mayReleaseEarly = true
+		}
+	}
+	return delay, len(candidates) > 0, mayReleaseEarly
 }
 
 // AdmitSenseNovaAttempt can change the chosen key before dispatch, but never
@@ -240,38 +259,31 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 		if err != nil || channel.Status != common.ChannelStatusEnabled || !channel.SenseNovaPool || ValidateSenseNovaPool(channel) != nil || !containsSenseNovaModel(channel, request.Model) {
 			return senseNovaAdmissionError("SenseNova pool is unavailable", http.StatusServiceUnavailable)
 		}
-		keys := channel.GetKeys()
-		start := 0
-		for i, key := range keys {
-			if key == attempt.key {
-				start = i
-				break
-			}
+		ordered, orderErr := senseNovaCapacityCandidates(c, channel, request, attempt.key)
+		if orderErr != nil {
+			return senseNovaAdmissionError("SenseNova capacity store unavailable", http.StatusServiceUnavailable)
 		}
-		excludedValue, _ := c.Get(senseNovaExcludedContext)
-		excluded, _ := excludedValue.(map[string]bool)
 		delay := time.Duration(0)
-		candidates, oversized := 0, 0
-		for offset := range keys {
-			index := (start + offset) % len(keys)
-			key := keys[index]
-			if status, ok := channel.ChannelInfo.MultiKeyStatusList[index]; ok && status != common.ChannelStatusEnabled {
+		mayReleaseEarly, ordinaryWaiting := false, false
+		oversized := 0
+		available := make(map[string]bool, len(ordered))
+		for _, candidate := range ordered {
+			available[candidate.request.Fingerprint] = true
+		}
+		for _, candidate := range ordered {
+			key, fingerprint := candidate.key, candidate.request.Fingerprint
+			if candidate.observation.RetryAfter > 0 {
+				if delay == 0 || candidate.observation.RetryAfter < delay {
+					delay = candidate.observation.RetryAfter
+				}
 				continue
 			}
-			fingerprint := model.SenseNovaFingerprint(key)
-			if excluded[strconv.Itoa(channel.Id)+":"+fingerprint] {
+			recovering := candidate.rank == 2
+			if recovering && ordinaryWaiting {
 				continue
 			}
-			snapshot, snapshotErr := model.SenseNovaRequestSnapshot(channel.Id, key, request.Model, time.Now().Unix())
-			if errors.Is(snapshotErr, model.ErrSenseNovaUnavailable) {
-				continue
-			}
-			if snapshotErr != nil {
-				return senseNovaAdmissionError("SenseNova health store unavailable", http.StatusServiceUnavailable)
-			}
-			candidates++
-			request.Fingerprint = fingerprint
-			reservation, wait, reserveErr := reserveSenseNovaBudget(c.Request.Context(), request, state.config.policy(fingerprint))
+			policy := state.config.policy(fingerprint)
+			reservation, wait, fixedMinimum, reserveErr := reserveSenseNovaBudgetWithWait(c.Request.Context(), candidate.request, policy)
 			if errors.Is(reserveErr, errSenseNovaBudgetTooLarge) {
 				oversized++
 				continue
@@ -283,20 +295,54 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 				if wait > 0 && (delay == 0 || wait < delay) {
 					delay = wait
 				}
+				// Only a wait whose fixed part fits this request can justify
+				// polling or postponing a recovery candidate.
+				if fixedMinimum <= time.Until(state.deadline) {
+					mayReleaseEarly = mayReleaseEarly || wait > fixedMinimum
+					ordinaryWaiting = ordinaryWaiting || !recovering
+				}
 				continue
 			}
+			recoveryOwner := ""
+			if recovering {
+				recoveryOwner = reservation.owner
+				claimed, leaseWait, claimErr := claimSenseNovaCapacityRecovery(c.Request.Context(), channel.Id, request.Model, recoveryOwner, policy.Lease)
+				if claimErr != nil || !claimed {
+					cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					_ = finishSenseNovaBudget(cleanupCtx, reservation, -1, true)
+					cancel()
+					if claimErr != nil {
+						return senseNovaAdmissionError("SenseNova recovery store unavailable", http.StatusServiceUnavailable)
+					}
+					if leaseWait > 0 && (delay == 0 || leaseWait < delay) {
+						delay = leaseWait
+					}
+					mayReleaseEarly = true
+					continue
+				}
+			}
 			// A queued administrative edit must not race an admission into a stale key.
-			snapshot, snapshotErr = model.SenseNovaRequestSnapshot(channel.Id, key, request.Model, time.Now().Unix())
+			snapshot, snapshotErr := model.SenseNovaRequestSnapshot(channel.Id, key, request.Model, time.Now().Unix())
 			if snapshotErr == nil && snapshot.NeedsRecovery {
-				snapshot, snapshotErr = model.ClaimSenseNovaRecovery(snapshot, key, time.Now().Unix())
+				if !recovering {
+					// Health changed after ranking. Rerank before taking a global
+					// recovery slot, instead of bypassing the recovery bound.
+					snapshotErr = model.ErrSenseNovaUnavailable
+				} else {
+					snapshot, snapshotErr = model.ClaimSenseNovaRecovery(snapshot, key, time.Now().Unix())
+				}
 			}
 			if snapshotErr != nil {
 				cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if recoveryOwner != "" {
+					_ = releaseSenseNovaCapacityRecovery(cleanupCtx, channel.Id, request.Model, recoveryOwner)
+				}
 				_ = finishSenseNovaBudget(cleanupCtx, reservation, -1, true)
 				cancel()
 				if !errors.Is(snapshotErr, model.ErrSenseNovaUnavailable) {
 					return senseNovaAdmissionError("SenseNova health store unavailable", http.StatusServiceUnavailable)
 				}
+				delete(available, fingerprint)
 				continue
 			}
 			state.channelID = channel.Id
@@ -304,11 +350,13 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 			state.dispatched = false
 			state.successful = false
 			state.actualTokens = -1
+			state.capacityRequest = candidate.request
+			state.capacityRecoveryOwner = recoveryOwner
 			common.SetContextKey(c, constant.ContextKeyLocalCountTokens, false)
 			attempt.snapshot = snapshot
 			attempt.key = key
 			common.SetContextKey(c, constant.ContextKeyChannelKey, key)
-			common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, index)
+			common.SetContextKey(c, constant.ContextKeyChannelMultiKeyIndex, candidate.index)
 			common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, channel.ChannelInfo.IsMultiKey)
 			c.Set("sensenova_admission_retry_after", int64(0))
 			releaseSenseNovaAdmissionQueue(state)
@@ -316,8 +364,8 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 			startSenseNovaRecoveryRenewal(c, attempt)
 			return nil
 		}
-		healthDelay, cooling := senseNovaHealthWait(c, channel, request.Model)
-		if candidates > 0 && candidates == oversized && !cooling {
+		healthDelay, cooling, healthMayReleaseEarly := senseNovaHealthCapacityWait(c, channel, request.Model, available, &request)
+		if len(ordered) > 0 && len(ordered) == oversized && !cooling {
 			return senseNovaAdmissionError("SenseNova request exceeds configured TPM budget", http.StatusTooManyRequests)
 		}
 		cause := SenseNovaWaitCapacity
@@ -325,8 +373,13 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 			delay = healthDelay
 			cause = SenseNovaWaitHealth
 		}
+		mayReleaseEarly = mayReleaseEarly || healthMayReleaseEarly
 		if delay == 0 {
 			return senseNovaAdmissionError("SenseNova pool has no eligible capacity", http.StatusServiceUnavailable)
+		}
+		if !mayReleaseEarly && delay > time.Until(state.deadline) {
+			c.Set("sensenova_admission_retry_after", min(int64(math.Ceil(delay.Seconds())), int64(86400)))
+			return senseNovaAdmissionError("SenseNova capacity cannot recover within this request's wait budget", http.StatusServiceUnavailable)
 		}
 		if waitErr := waitSenseNovaAdmission(c, state, channel.Id, delay, cause); waitErr != nil {
 			return waitErr
@@ -352,26 +405,43 @@ func startSenseNovaBudgetRenewal(c *gin.Context, state *senseNovaAdmission) {
 	state.renewDone = make(chan struct{})
 	c.Request = c.Request.WithContext(requestContext)
 	reservation, done := state.reservation, state.renewDone
+	recoveryOwner, capacityRequest := state.capacityRecoveryOwner, state.capacityRequest
 	go func() {
 		defer close(done)
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-renewalContext.Done():
-				return
-			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(renewalContext, 2*time.Second)
-				err := renewSenseNovaBudget(ctx, reservation)
-				cancel()
-				if err != nil {
-					common.SysError("SenseNova admission lease renewal failed")
-					cancelRequest()
-					return
+		runSenseNovaBudgetRenewal(renewalContext, cancelRequest, reservation, recoveryOwner, capacityRequest, 30*time.Second)
+	}()
+}
+
+func runSenseNovaBudgetRenewal(renewalContext context.Context, cancelRequest context.CancelFunc, reservation *senseNovaBudgetReservation, recoveryOwner string, capacityRequest senseNovaBudgetRequest, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-renewalContext.Done():
+			return
+		case <-ticker.C:
+			ctx, cancel := context.WithTimeout(renewalContext, 2*time.Second)
+			err := renewSenseNovaBudget(ctx, reservation)
+			if err == nil && recoveryOwner != "" {
+				var owned bool
+				owned, err = renewSenseNovaCapacityRecovery(ctx, capacityRequest.ChannelID, capacityRequest.Model, recoveryOwner, reservation.lease)
+				if err == nil && !owned {
+					err = errSenseNovaBudgetLeaseLost
 				}
 			}
+			cancel()
+			// Stopping the worker interrupts Redis too; only a failure while
+			// renewal is still live should cancel dispatch or response reads.
+			if renewalContext.Err() != nil {
+				return
+			}
+			if err != nil {
+				common.SysError("SenseNova admission lease renewal failed")
+				cancelRequest()
+				return
+			}
 		}
-	}()
+	}
 }
 
 func MarkSenseNovaBudgetDispatched(c *gin.Context) {
@@ -414,10 +484,11 @@ func finishSenseNovaAdmissionAttempt(c *gin.Context) {
 	if state == nil || state.reservation == nil {
 		return
 	}
+	requestCanceled := c.Request == nil || c.Request.Context().Err() != nil
 	if state.stopRenew != nil {
 		state.stopRenew()
 		<-state.renewDone
-		requestCanceled := c.Request.Context().Err() != nil
+		requestCanceled = requestCanceled || c.Request.Context().Err() != nil
 		state.cancelRequest()
 		// Preserve cancellation from lease loss or renewal failure so cleanup
 		// cannot turn a terminated request into a fresh retry on another key.
@@ -428,6 +499,22 @@ func finishSenseNovaAdmissionAttempt(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	if state.dispatched && !requestCanceled {
+		attempt := getSenseNovaAttempt(c)
+		tpm, retryAfter := false, int64(0)
+		if attempt != nil {
+			tpm, retryAfter = attempt.limitKind == "tpm", attempt.retryAfter
+		}
+		if err := recordSenseNovaCapacity(ctx, state.reservation, state.capacityRequest, state.successful, tpm, retryAfter); err != nil {
+			common.SysError("SenseNova capacity observation failed")
+		}
+	}
+	if state.capacityRecoveryOwner != "" {
+		if err := releaseSenseNovaCapacityRecovery(ctx, state.capacityRequest.ChannelID, state.capacityRequest.Model, state.capacityRecoveryOwner); err != nil {
+			common.SysError("SenseNova capacity recovery cleanup failed")
+		}
+		state.capacityRecoveryOwner = ""
+	}
 	actualTokens := int64(-1)
 	if state.successful {
 		actualTokens = state.actualTokens

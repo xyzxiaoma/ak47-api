@@ -459,3 +459,157 @@ func TestSenseNovaQueueMixedLeaseDurations(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, ok, "short lease must not shorten the shared Redis key TTL")
 }
+
+func TestSenseNovaBudgetFixedWaitUnknownPacing(t *testing.T) {
+	_, advance := setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	policy.TokensPerMinute, policy.Interval, policy.Lease = 0, 300*time.Second, 120*time.Second
+	active, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("active", 10), policy)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	blocked, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest("waiting", 10), policy)
+	require.NoError(t, err)
+	assert.Nil(t, blocked)
+	assert.Equal(t, 300*time.Second, wait)
+	assert.Equal(t, 300*time.Second, fixed, "completion of an active request cannot shorten configured start spacing")
+	require.NoError(t, finishSenseNovaBudget(ctx, active, -1, false))
+	advance(20 * time.Second)
+	blocked, wait, fixed, err = reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest("waiting", 10), policy)
+	require.NoError(t, err)
+	assert.Nil(t, blocked)
+	assert.Equal(t, 280*time.Second, wait)
+	assert.Equal(t, wait, fixed, "finished unknown pacing has no early release path")
+}
+
+func TestSenseNovaBudgetFixedWaitAllowsActiveReconciliation(t *testing.T) {
+	setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	policy.Window, policy.Lease = 300*time.Second, 120*time.Second
+	active, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("active", 100), policy)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	blocked, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest("waiting", 50), policy)
+	require.NoError(t, err)
+	assert.Nil(t, blocked)
+	assert.Equal(t, 300*time.Second, wait)
+	assert.Zero(t, fixed, "active estimate can reconcile before its rolling window expires")
+	require.NoError(t, finishSenseNovaBudget(ctx, active, 40, false))
+	admitted, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest("waiting", 50), policy)
+	require.NoError(t, err)
+	assert.NotNil(t, admitted, "early reconciliation must actually make the waiting request admissible")
+	assert.Zero(t, wait)
+	assert.Zero(t, fixed)
+}
+
+func TestSenseNovaBudgetFixedWaitRetainsFinishedCapacity(t *testing.T) {
+	_, advance := setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	policy.Window, policy.Lease = 300*time.Second, 120*time.Second
+	first, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("first", 60), policy)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	require.NoError(t, finishSenseNovaBudget(ctx, first, 60, false))
+	advance(10 * time.Second)
+	second, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("second", 20), policy)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	require.NoError(t, finishSenseNovaBudget(ctx, second, 20, false))
+	advance(10 * time.Second)
+	active, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("active", 20), policy)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	for _, tc := range []struct {
+		tokens      int64
+		wait, fixed time.Duration
+	}{
+		{20, 280 * time.Second, 0},
+		{50, 280 * time.Second, 280 * time.Second},
+		{90, 300 * time.Second, 290 * time.Second},
+	} {
+		blocked, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest(fmt.Sprint(tc.tokens), tc.tokens), policy)
+		require.NoError(t, err)
+		assert.Nil(t, blocked)
+		assert.Equal(t, tc.wait, wait)
+		assert.Equal(t, tc.fixed, fixed, "finished debits cannot be returned by the active request")
+	}
+	require.NoError(t, finishSenseNovaBudget(ctx, active, -1, false))
+	blocked, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, senseNovaTestBudgetRequest("no-active", 90), policy)
+	require.NoError(t, err)
+	assert.Nil(t, blocked)
+	assert.Equal(t, 300*time.Second, wait)
+	assert.Equal(t, wait, fixed, "without an active owner, the observed ledger wait is fixed")
+}
+
+func TestSenseNovaBudgetFixedWaitPreservesCompletedRequestIdentity(t *testing.T) {
+	setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	policy.Window = 300 * time.Second
+	request := senseNovaTestBudgetRequest("already-completed", 0)
+	done, _, err := reserveSenseNovaBudget(ctx, request, policy)
+	require.NoError(t, err)
+	require.NotNil(t, done)
+	require.NoError(t, finishSenseNovaBudget(ctx, done, 0, false))
+	active, _, err := reserveSenseNovaBudget(ctx, senseNovaTestBudgetRequest("active", 0), policy)
+	require.NoError(t, err)
+	require.NotNil(t, active)
+	blocked, wait, fixed, err := reserveSenseNovaBudgetWithWait(ctx, request, policy)
+	require.NoError(t, err)
+	assert.Nil(t, blocked)
+	assert.Equal(t, 300*time.Second, wait)
+	assert.Equal(t, wait, fixed, "completed request IDs remain reserved independently of active token refunds")
+}
+
+func TestSenseNovaBudgetReadWaitDoesNotReserveCapacity(t *testing.T) {
+	for _, known := range []bool{false, true} {
+		t.Run(fmt.Sprint(known), func(t *testing.T) {
+			server, _ := setupSenseNovaBudgetRedis(t)
+			ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+			if !known {
+				policy.TokensPerMinute = 0
+			}
+			request := senseNovaTestBudgetRequest("read-only", 60)
+			wait, fixed, err := readSenseNovaBudgetWait(ctx, request, policy)
+			require.NoError(t, err)
+			assert.Zero(t, wait)
+			assert.Zero(t, fixed)
+			assert.Empty(t, server.Keys(), "checking pending health cannot manufacture a lease, pacing timer, or debit")
+			request.ID = "actual-owner"
+			reservation, _, err := reserveSenseNovaBudget(ctx, request, policy)
+			require.NoError(t, err)
+			require.NotNil(t, reservation)
+			wait, fixed, err = readSenseNovaBudgetWait(ctx, request, policy)
+			require.NoError(t, err)
+			assert.Zero(t, wait, "same-owner read keeps reservation idempotence")
+			assert.Zero(t, fixed)
+			require.NoError(t, renewSenseNovaBudget(ctx, reservation), "read must not replace the live owner")
+			request.ID = "blocked-reader"
+			wait, fixed, err = readSenseNovaBudgetWait(ctx, request, policy)
+			require.NoError(t, err)
+			assert.Equal(t, time.Minute, wait)
+			if known {
+				assert.Zero(t, fixed)
+			} else {
+				assert.Equal(t, time.Minute, fixed)
+			}
+		})
+	}
+}
+
+func TestSenseNovaBudgetReadWaitUsesAdmissionValidation(t *testing.T) {
+	setupSenseNovaBudgetRedis(t)
+	ctx, policy := context.Background(), senseNovaTestBudgetPolicy()
+	request := senseNovaTestBudgetRequest("oversized-reader", 101)
+	_, _, err := readSenseNovaBudgetWait(ctx, request, policy)
+	assert.ErrorIs(t, err, errSenseNovaBudgetTooLarge)
+	request.PromptTokens = -1
+	_, _, err = readSenseNovaBudgetWait(ctx, request, policy)
+	assert.Error(t, err)
+	request.PromptTokens = 10
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	_, _, err = readSenseNovaBudgetWait(canceled, request, policy)
+	assert.ErrorIs(t, err, errSenseNovaBudgetUnavailable)
+	common.RDB = nil
+	_, _, err = readSenseNovaBudgetWait(ctx, request, policy)
+	assert.ErrorIs(t, err, errSenseNovaBudgetUnavailable)
+}
