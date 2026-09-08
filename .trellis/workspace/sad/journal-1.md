@@ -234,3 +234,29 @@ Fixed JSON-decoded Claude tool estimates and leased SenseNova real-traffic recov
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: SenseNova capacity release and failed large-request acceptance
+
+**Date**: 2026-09-08
+**Task**: SenseNova capacity release and failed large-request acceptance
+**Branch**: `codex/sensenova-capacity-routing`
+
+### Summary
+
+Deployed observed-workload routing with bounded waits and four-key recovery. Tests, race, vet, image build and deployment invariants passed. Full-context Claude canary failed after 320.86s: Write exact, Read/final answer incomplete, 1 of 5 gateway requests succeeded and 13 upstream TPM attempts failed. Temporary credentials removed. Upstream capacity remains unresolved; no payload or pricing changes.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ff636ee` | (see git log) |
+| `535043c` | (see git log) |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Confirm applicable TPM quotas or provision additional available capacity; do not claim stable large-request UX from this release.
