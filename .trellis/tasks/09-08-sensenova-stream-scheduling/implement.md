@@ -21,10 +21,10 @@ Redis atomic pacing and existing health generation checks. Go/Gin/GORM/Redis.
 - [x] Integrate on forge, run affected SenseNova service/model/controller/relay
   tests and relevant billing/retry tests; focused race checks for new shared state.
   Build root module; if relaykit changes, GOWORK=off go build ./... there too.
-- [ ] Independent Trellis review, resolve findings, update specs and operational
+- [x] Independent Trellis review, resolve findings, update specs and operational
   settings. Live synthetic canary only with available authorized credentials;
   distinguish technical regression success from upstream capacity acceptance.
-- [ ] Record final changes, validation and limitations; apply repository commit
+- [x] Record final changes, validation and limitations; apply repository commit
   and release workflow only after concrete checks. Never claim guaranteed SLA.
 
 Development remains in this isolated local worktree; forge workspace is

@@ -1,0 +1,10 @@
+{
+  "request_records": 7,
+  "final_latency_records": 7,
+  "consume_records": 3,
+  "total_quota": 14151,
+  "upstream_attempts": 22,
+  "limit_kinds": {
+    "rate_limit": 19
+  }
+}

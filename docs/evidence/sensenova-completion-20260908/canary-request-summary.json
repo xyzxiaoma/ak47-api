@@ -1,0 +1,58 @@
+[
+  {
+    "request_id": "202609080814255809514378268d9d6ue8xYTsi",
+    "total_ms": 2575,
+    "wait_ms": 0,
+    "attempts": 4,
+    "outcome": "error",
+    "quota": 0
+  },
+  {
+    "request_id": "202609080815279987990388268d9d6b4WzECn0",
+    "total_ms": 3129,
+    "wait_ms": 0,
+    "attempts": 4,
+    "outcome": "error",
+    "quota": 0
+  },
+  {
+    "request_id": "202609080816288977685348268d9d6M7rqmr6G",
+    "total_ms": 7933,
+    "wait_ms": 1000,
+    "attempts": 4,
+    "outcome": "success",
+    "quota": 12459
+  },
+  {
+    "request_id": "202609080816371194451778268d9d6MkxvqBm9",
+    "total_ms": 55796,
+    "wait_ms": 53127,
+    "attempts": 4,
+    "outcome": "error",
+    "quota": 0
+  },
+  {
+    "request_id": "202609080818325456296118268d9d6o7xoKAbn",
+    "total_ms": 2154,
+    "wait_ms": 0,
+    "attempts": 4,
+    "outcome": "error",
+    "quota": 0
+  },
+  {
+    "request_id": "202609080819356857832178268d9d6SWZx0Apw",
+    "total_ms": 3336,
+    "wait_ms": 0,
+    "attempts": 1,
+    "outcome": "success",
+    "quota": 862
+  },
+  {
+    "request_id": "202609080819408266132138268d9d6bmugExCC",
+    "total_ms": 59207,
+    "wait_ms": 54619,
+    "attempts": 1,
+    "outcome": "success",
+    "quota": 830
+  }
+]

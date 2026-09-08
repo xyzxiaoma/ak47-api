@@ -23,3 +23,11 @@ assigned stream/billing/scheduling scopes.
 
 Static checks are not upstream capacity acceptance. Retain the prior isolated
 study's failed workflow; key count and public context size cannot establish quota.
+
+Release deployed at 08:11:21 UTC with matching image/source and unchanged runtime
+configuration/business invariants. One full-context Write/Read/exact-answer
+workflow passed in 378.03s, exit0/is_error=false: seven client requests,22 upstream
+attempts,19 rate-limit failures. Three consume records totaling14151 quota;
+failures uncharged, temporary identity/token/cache cleaned. Stable one-person
+capacity remains unproven and expedited pacing remains disabled. See release
+record for complete evidence and operational limits.

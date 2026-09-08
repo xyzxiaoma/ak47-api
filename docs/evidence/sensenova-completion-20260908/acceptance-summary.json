@@ -1,0 +1,117 @@
+{
+  "version": "2.1.263",
+  "model": "deepseek-v4-pro",
+  "exit_code": 0,
+  "elapsed_s": 378.03,
+  "file_exact": true,
+  "answer_exact": true,
+  "tool_calls": [
+    "Write",
+    "Read"
+  ],
+  "is_error": false,
+  "requests": [
+    {
+      "started_at": "2026-09-08T08:14:25.096173+00:00",
+      "status": 429,
+      "elapsed_s": 3.14,
+      "first_semantic_s": null,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [],
+      "stop_reason": null,
+      "completed": null,
+      "retry_after": "59"
+    },
+    {
+      "started_at": "2026-09-08T08:15:27.269379+00:00",
+      "status": 429,
+      "elapsed_s": 3.98,
+      "first_semantic_s": null,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [],
+      "stop_reason": null,
+      "completed": null,
+      "retry_after": "57"
+    },
+    {
+      "started_at": "2026-09-08T08:16:28.428421+00:00",
+      "status": 200,
+      "elapsed_s": 8.43,
+      "first_semantic_s": 5.899,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [
+        "Write"
+      ],
+      "stop_reason": "tool_use",
+      "completed": true,
+      "retry_after": null
+    },
+    {
+      "started_at": "2026-09-08T08:16:37.018439+00:00",
+      "status": 429,
+      "elapsed_s": 55.92,
+      "first_semantic_s": null,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [],
+      "stop_reason": null,
+      "completed": null,
+      "retry_after": "59"
+    },
+    {
+      "started_at": "2026-09-08T08:18:32.130186+00:00",
+      "status": 429,
+      "elapsed_s": 2.59,
+      "first_semantic_s": null,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [],
+      "stop_reason": null,
+      "completed": null,
+      "retry_after": "59"
+    },
+    {
+      "started_at": "2026-09-08T08:19:33.892726+00:00",
+      "status": 200,
+      "elapsed_s": 5.25,
+      "first_semantic_s": 4.687,
+      "first_answer_s": null,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [
+        "Read"
+      ],
+      "stop_reason": "tool_use",
+      "completed": true,
+      "retry_after": null
+    },
+    {
+      "started_at": "2026-09-08T08:19:39.859498+00:00",
+      "status": 200,
+      "elapsed_s": 60.22,
+      "first_semantic_s": 59.829,
+      "first_answer_s": 59.829,
+      "tools": 25,
+      "max_tokens": 32000,
+      "thinking_type": "adaptive",
+      "tool_names": [],
+      "stop_reason": "end_turn",
+      "completed": true,
+      "retry_after": null
+    }
+  ]
+}
