@@ -260,3 +260,39 @@ Deployed observed-workload routing with bounded waits and four-key recovery. Tes
 ### Next Steps
 
 - Confirm applicable TPM quotas or provision additional available capacity; do not claim stable large-request UX from this release.
+
+
+## Session 12: SenseNova completion repair and slow workflow acceptance
+
+**Date**: 2026-09-08
+**Task**: SenseNova completion repair and slow workflow acceptance
+**Branch**: `codex/sensenova-capacity-routing`
+
+### Summary
+
+Released validated completion, partial billing, mixed rate classification and optional conversation scheduling. Full-context Claude Code acceptance passed, but upstream capacity remains too constrained to claim stable single-user service.
+
+### Main Changes
+
+- Validate completion before success; retry pre-output failures, preserve post-output errors and account explicit partial usage.
+- Keep optional affinity and expedited followups disabled pending separate live capacity qualification.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0161e3e` | (see git log) |
+| `8a94ec9` | (see git log) |
+
+### Testing
+
+- [OK] Targeted SenseNova unit/race tests and pinned Docker build passed; production digest/configuration/health verified.
+- [OK] Full Claude Code workflow passed in 378.03 seconds with Write and Read tools; 19 of 22 upstream attempts rate limited, 3 successful billed calls, failed attempts billed zero.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Qualify actual per-model whole-request capacity and separately canary explicit conversation scheduling; do not promise a numeric key-count SLA.

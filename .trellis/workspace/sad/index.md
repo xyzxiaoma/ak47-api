@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-09-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~262 | Active |
+| `journal-1.md` | ~298 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-09-08 | SenseNova completion repair and slow workflow acceptance | `0161e3e`, `8a94ec9` | `codex/sensenova-capacity-routing` |
 | 11 | 2026-09-08 | SenseNova capacity release and failed large-request acceptance | `ff636ee`, `535043c` | `codex/sensenova-capacity-routing` |
 | 10 | 2026-09-07 | Claude accounting and real-request recovery release | `190029f`, `23f55b3`, `6bb3140` | `-` |
 | 9 | 2026-09-07 | SenseNova latency diagnostics and verified Claude acceptance | `6f9f0bf`, `427477b`, `3d1545b` | `codex/sensenova-key-pool` |
