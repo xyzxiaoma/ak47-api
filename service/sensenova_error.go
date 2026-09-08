@@ -15,15 +15,33 @@ type SenseNovaFailure struct {
 	AccountWide bool
 }
 
-// Codes are matched exactly, never inferred from free-form messages or headers.
-// Keep this diagnostic classification separate from health/account scoping.
+// Named codes and observed provider tuples are matched exactly. Message/type
+// normalization only ignores case and whitespace; substrings never establish
+// TPM or RPM. Keep diagnostics separate from health/account scoping.
 func senseNovaLimitKind(err *types.NewAPIError) string {
 	if err == nil || err.GetErrorType() == types.ErrorTypeNewAPIError {
 		return "unknown"
 	}
+	providerType, providerMessage := "", ""
+	if provider, ok := err.RelayError.(types.OpenAIError); ok {
+		providerType = strings.ToLower(strings.TrimSpace(provider.Type))
+		providerMessage = strings.ToLower(strings.Join(strings.Fields(provider.Message), " "))
+	}
 	switch string(err.GetErrorCode()) {
-	case "ModelAccountTpmRateLimitExceeded", "429001":
+	case "ModelAccountTpmRateLimitExceeded":
 		return "tpm"
+	case "429001":
+		if providerType == "invalid_request_error" && providerMessage == "inference tpm exhausted" {
+			return "tpm"
+		}
+		// The same code also means "inference exceeds tpm/rpm limit".
+		// A bare code or mixed message cannot prove token exhaustion.
+		return "rate_limit"
+	case "8":
+		if providerType == "quota_exceeded_error" && providerMessage == "rpm exhausted" {
+			return "rpm"
+		}
+		return "unknown"
 	case "ModelAccountRpmRateLimitExceeded":
 		return "rpm"
 	case "overloaded_error":
@@ -59,7 +77,7 @@ func ClassifySenseNovaFailure(err *types.NewAPIError) SenseNovaFailure {
 	}
 	// Embedded errors in HTTP-200 streams are surfaced as bad gateway. Exact
 	// provider limit codes still identify model capacity, independent of status.
-	if kind := senseNovaLimitKind(err); kind == "tpm" || kind == "rpm" {
+	if kind := senseNovaLimitKind(err); kind == "tpm" || kind == "rpm" || kind == "rate_limit" {
 		return SenseNovaFailure{State: "cooling", Reason: "rate_limited"}
 	}
 	if err.StatusCode == http.StatusPaymentRequired || err.StatusCode == http.StatusTooManyRequests || err.StatusCode == http.StatusForbidden {

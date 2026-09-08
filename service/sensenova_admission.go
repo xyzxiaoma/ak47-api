@@ -240,6 +240,9 @@ func AdmitSenseNovaAttempt(c *gin.Context) *types.NewAPIError {
 		return senseNovaAdmissionError("SenseNova token estimate unavailable", http.StatusServiceUnavailable)
 	}
 	request := senseNovaBudgetRequest{ChannelID: attempt.snapshot.ChannelID, Model: attempt.model, ID: state.id + "-" + strconv.Itoa(attempt.number), PromptTokens: int64(estimated)}
+	if state.config.affinity {
+		_, request.Conversation = senseNovaConversationIdentity(c, request.ChannelID, request.Model)
+	}
 	for _, field := range []string{"requested_max_tokens", "requested_max_completion_tokens", "requested_max_tokens_to_sample", "requested_max_output_tokens"} {
 		if ceiling, ok := metrics[field].(uint); ok {
 			if uint64(ceiling) > math.MaxInt64 {
@@ -519,8 +522,16 @@ func finishSenseNovaAdmissionAttempt(c *gin.Context) {
 	if state.successful {
 		actualTokens = state.actualTokens
 	}
-	if err := finishSenseNovaBudget(ctx, state.reservation, actualTokens, !state.dispatched); err != nil {
+	verified := state.dispatched && state.successful && !requestCanceled
+	published, finishErr := finishSenseNovaBudgetOutcome(ctx, state.reservation, actualTokens, !state.dispatched, verified)
+	if finishErr != nil {
 		common.SysError("SenseNova admission completion failed")
+	}
+	if published && state.config.affinity {
+		scope, session := senseNovaConversationIdentity(c, state.capacityRequest.ChannelID, state.capacityRequest.Model)
+		if _, err := senseNovaConversationPreference(ctx, scope, session, state.capacityRequest.Fingerprint); err != nil {
+			common.SysError("SenseNova conversation preference update failed")
+		}
 	}
 	state.reservation = nil
 }

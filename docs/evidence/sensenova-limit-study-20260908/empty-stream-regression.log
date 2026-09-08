@@ -1,0 +1,32 @@
+=== RUN   TestSenseNovaStudyRejectsEmptyChatStream
+=== RUN   TestSenseNovaStudyRejectsEmptyChatStream/openai
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:   export GIN_MODE=release
+ - using code:  gin.SetMode(gin.ReleaseMode)
+
+[INFO] 2026/09/08 - 07:16:13 | sensenova-protocol-test | stream ended: reason=eof
+    sensenova_empty_study_test.go:24: empty upstream: returned usage=&{PromptTokens:0 CompletionTokens:0 TotalTokens:0 PromptCacheHitTokens:0 UsageSemantic: UsageSource: BillingUsage:<nil> PromptTokensDetails:{CachedTokens:0 CachedCreationTokens:0 CacheWriteTokens:0 TextTokens:0 AudioTokens:0 ImageTokens:0} CompletionTokenDetails:{TextTokens:0 AudioTokens:0 ImageTokens:0 ReasoningTokens:0} InputTokens:0 OutputTokens:0 InputTokensDetails:<nil> ClaudeCacheCreation5mTokens:0 ClaudeCacheCreation1hTokens:0 Cost:<nil>} error= client body="data: [DONE]\n\n"
+    sensenova_empty_study_test.go:25:
+            Error Trace:    /work/relay/channel/openai/sensenova_empty_study_test.go:25
+            Error:          Expected value not to be nil.
+            Test:           TestSenseNovaStudyRejectsEmptyChatStream/openai
+            Messages:       an empty upstream stream must not be accepted as success
+=== RUN   TestSenseNovaStudyRejectsEmptyChatStream/claude
+[GIN-debug] [WARNING] Running in "debug" mode. Switch to "release" mode in production.
+ - using env:   export GIN_MODE=release
+ - using code:  gin.SetMode(gin.ReleaseMode)
+
+[INFO] 2026/09/08 - 07:16:13 | sensenova-protocol-test | stream ended: reason=eof
+[SYS] 2026/09/08 - 07:16:13 | error unmarshalling stream response: unexpected end of JSON input
+    sensenova_empty_study_test.go:24: empty upstream: returned usage=&{PromptTokens:0 CompletionTokens:0 TotalTokens:0 PromptCacheHitTokens:0 UsageSemantic: UsageSource: BillingUsage:<nil> PromptTokensDetails:{CachedTokens:0 CachedCreationTokens:0 CacheWriteTokens:0 TextTokens:0 AudioTokens:0 ImageTokens:0} CompletionTokenDetails:{TextTokens:0 AudioTokens:0 ImageTokens:0 ReasoningTokens:0} InputTokens:0 OutputTokens:0 InputTokensDetails:<nil> ClaudeCacheCreation5mTokens:0 ClaudeCacheCreation1hTokens:0 Cost:<nil>} error= client body=""
+    sensenova_empty_study_test.go:25:
+            Error Trace:    /work/relay/channel/openai/sensenova_empty_study_test.go:25
+            Error:          Expected value not to be nil.
+            Test:           TestSenseNovaStudyRejectsEmptyChatStream/claude
+            Messages:       an empty upstream stream must not be accepted as success
+--- FAIL: TestSenseNovaStudyRejectsEmptyChatStream (0.01s)
+    --- FAIL: TestSenseNovaStudyRejectsEmptyChatStream/openai (0.01s)
+    --- FAIL: TestSenseNovaStudyRejectsEmptyChatStream/claude (0.01s)
+FAIL
+FAIL    github.com/QuantumNous/new-api/relay/channel/openai 0.050s
+FAIL

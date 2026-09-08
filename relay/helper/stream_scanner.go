@@ -265,7 +265,11 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			if data == "" {
 				continue
 			}
-			if !strings.HasPrefix(data, "[DONE]") {
+			isDone := strings.HasPrefix(data, "[DONE]")
+			if service.IsSenseNovaAttempt(c) {
+				isDone = data == "[DONE]"
+			}
+			if !isDone {
 				if observeLatency != nil {
 					observeLatency(data)
 				}

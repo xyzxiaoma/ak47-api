@@ -17,11 +17,14 @@ type senseNovaModelBudget struct {
 }
 
 type senseNovaAdmissionConfig struct {
-	budget          senseNovaModelBudget
-	outputAllowance int64
-	interval        time.Duration
-	wait            time.Duration
-	queueLimit      int
+	budget           senseNovaModelBudget
+	outputAllowance  int64
+	interval         time.Duration
+	wait             time.Duration
+	queueLimit       int
+	affinity         bool
+	followups        int
+	followupInterval time.Duration
 }
 
 // These are operator admission policies, not asserted provider quota values.
@@ -52,7 +55,24 @@ func senseNovaAdmissionConfigFor(name string) (*senseNovaAdmissionConfig, error)
 	if !applies {
 		return nil, nil
 	}
-	cfg := &senseNovaAdmissionConfig{outputAllowance: 4096, interval: 60 * time.Second, wait: 75 * time.Second, queueLimit: 32}
+	cfg := &senseNovaAdmissionConfig{outputAllowance: 4096, interval: 60 * time.Second, wait: 75 * time.Second, queueLimit: 32, followupInterval: 5 * time.Second}
+	if raw := strings.TrimSpace(os.Getenv("SENSENOVA_CONVERSATION_AFFINITY_ENABLED")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return nil, errors.New("invalid SenseNova affinity configuration")
+		}
+		cfg.affinity = value
+	}
+	if raw := strings.TrimSpace(os.Getenv("SENSENOVA_CANARY_FOLLOWUPS")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || value > 2 {
+			return nil, errors.New("invalid SenseNova followup configuration")
+		}
+		cfg.followups = value
+	}
+	if cfg.followups > 0 && !cfg.affinity {
+		return nil, errors.New("SenseNova followups require conversation affinity")
+	}
 	limits := map[string]senseNovaModelBudget{}
 	if raw := strings.TrimSpace(os.Getenv("SENSENOVA_TPM_LIMITS")); raw != "" {
 		if common.Unmarshal([]byte(raw), &limits) != nil {
@@ -92,6 +112,7 @@ func senseNovaAdmissionConfigFor(name string) (*senseNovaAdmissionConfig, error)
 	}{
 		{"SENSENOVA_UNKNOWN_TPM_INTERVAL_SECONDS", &cfg.interval, 60, 300},
 		{"SENSENOVA_ADMISSION_WAIT_SECONDS", &cfg.wait, 1, 75},
+		{"SENSENOVA_CANARY_FOLLOWUP_INTERVAL_SECONDS", &cfg.followupInterval, 5, 60},
 	} {
 		if raw := strings.TrimSpace(os.Getenv(setting.name)); raw != "" {
 			value, err := strconv.ParseInt(raw, 10, 64)
@@ -116,5 +137,6 @@ func (cfg *senseNovaAdmissionConfig) policy(fingerprint string) senseNovaBudgetP
 	if specific, ok := cfg.budget.Keys[fingerprint]; ok {
 		limit = specific
 	}
-	return senseNovaBudgetPolicy{TokensPerMinute: limit, OutputAllowance: cfg.outputAllowance, Interval: cfg.interval, Window: time.Minute, Lease: 120 * time.Second}
+	return senseNovaBudgetPolicy{TokensPerMinute: limit, OutputAllowance: cfg.outputAllowance, Interval: cfg.interval, Window: time.Minute, Lease: 120 * time.Second,
+		Followups: cfg.followups, FollowupInterval: cfg.followupInterval}
 }

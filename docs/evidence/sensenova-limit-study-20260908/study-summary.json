@@ -1,0 +1,15 @@
+{
+  "started_at": "2026-09-08T06:41:29.131353+00:00",
+  "last_request_at": "2026-09-08T07:12:28.405851+00:00",
+  "diagnostic_count": 29,
+  "workflow_count": 2,
+  "inference_http_request_count": 58,
+  "http_status_counts": {
+    "200": 26,
+    "429": 32
+  },
+  "diagnostic_reported_tokens": 79096,
+  "workflow_pass_count": 1,
+  "credential_copies_in_selected_evidence": false,
+  "temporary_credential_removed": true
+}

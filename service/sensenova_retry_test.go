@@ -110,7 +110,7 @@ func TestSenseNovaRelayRetryAfterIsAttemptLocal(t *testing.T) {
 
 func TestSenseNovaSafeAttemptLimitCategories(t *testing.T) {
 	for _, tt := range []struct{ code, want string }{
-		{"429001", "tpm"},
+		{"429001", "rate_limit"},
 		{"ModelAccountTpmRateLimitExceeded", "tpm"},
 		{"ModelAccountRpmRateLimitExceeded", "rpm"},
 		{"overloaded_error", "capacity"},
@@ -142,7 +142,9 @@ func TestSenseNovaSafeAttemptLimitCategories(t *testing.T) {
 func TestSenseNovaCodeOnlyHTTPRejectionsStaySafe(t *testing.T) {
 	for _, tt := range []struct{ name, body, kind string }{
 		{"observed TPM string", `{"error":{"code":"429001","message":"inference tpm exhausted","type":"invalid_request_error"}}`, "tpm"},
-		{"observed TPM numeric", `{"error":{"code":429001,"message":"fake-secret prompt"}}`, "tpm"},
+		{"ambiguous numeric limit", `{"error":{"code":429001,"message":"fake-secret prompt"}}`, "rate_limit"},
+		{"observed mixed limit", `{"error":{"code":429001,"type":"rate_limit_error","message":"inference exceeds tpm/rpm limit"}}`, "rate_limit"},
+		{"observed RPM numeric", `{"error":{"code":8,"type":"quota_exceeded_error","message":"rpm exhausted"}}`, "rpm"},
 		{"unrecognized numeric", `{"error":{"code":429002,"message":"fake-secret prompt"}}`, "unknown"},
 		{"code only", `{"error":{"code":"ModelAccountTpmRateLimitExceeded"}}`, "tpm"},
 		{"unknown code only", `{"error":{"code":"fake-secret"}}`, "unknown"},

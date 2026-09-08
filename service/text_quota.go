@@ -412,14 +412,33 @@ func usageSemanticFromUsage(relayInfo *relaycommon.RelayInfo, usage *dto.Usage) 
 	return "openai"
 }
 
+// PostSenseNovaPartialConsumeQuota settles delivered work while the relay keeps
+// its terminal error. SenseNova stream adaptors return non-nil partial usage
+// only after emitting semantic output; an empty failed stream remains refundable.
+func PostSenseNovaPartialConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage) {
+	if ctx == nil || relayInfo == nil || !relayInfo.IsStream || !IsSenseNovaAttempt(ctx) || !ctx.Writer.Written() || usage == nil {
+		return
+	}
+	billingUsage := effectiveBillingUsage(usage)
+	if billingUsage == nil || billingUsage.PromptTokens < 0 || billingUsage.CompletionTokens < 0 ||
+		(billingUsage.PromptTokens == 0 && billingUsage.CompletionTokens == 0) {
+		return
+	}
+	postTextConsumeQuota(ctx, relayInfo, usage, []string{"SenseNova stream interrupted; partial usage settled"}, false)
+}
+
 func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string) {
+	postTextConsumeQuota(ctx, relayInfo, usage, extraContent, true)
+}
+
+func postTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []string, completed bool) {
 	ObserveSenseNovaUsage(ctx, usage)
 	originUsage := usage
 	billingUsage := effectiveBillingUsage(usage)
 	if usage == nil {
 		extraContent = append(extraContent, "上游无计费信息")
 	}
-	if originUsage != nil {
+	if completed && originUsage != nil {
 		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, billingUsage, relayInfo.GetFinalRequestRelayFormat())
 	}
 
@@ -496,6 +515,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
 	appendUsageBillingPathForLog(other, common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage)
+	if !completed {
+		other["incomplete"] = true
+	}
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
 	}
@@ -556,7 +578,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
-	})
+	if completed {
+		gopool.Go(func() {
+			perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
+		})
+	}
 }

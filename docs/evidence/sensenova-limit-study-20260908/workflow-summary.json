@@ -1,0 +1,48 @@
+[
+  {
+    "version": "2.1.263",
+    "model": "deepseek-v4-pro",
+    "target": "https://token.sensenova.cn",
+    "exit_code": 0,
+    "elapsed_s": 41.77,
+    "file_exact": true,
+    "answer_exact": true,
+    "tool_calls": [
+      "Write",
+      "Read"
+    ],
+    "result_type": "success",
+    "is_error": false,
+    "result_error": "DEEPSEEK_CLAUDE_CODE_OK",
+    "request_count": 6,
+    "status_counts": {
+      "200": 4,
+      "429": 2
+    },
+    "completed_model_responses": 3,
+    "http200_without_completion": 1
+  },
+  {
+    "version": "2.1.263",
+    "model": "deepseek-v4-pro",
+    "target": "https://token.sensenova.cn",
+    "exit_code": 1,
+    "elapsed_s": 286.11,
+    "file_exact": true,
+    "answer_exact": false,
+    "tool_calls": [
+      "Write",
+      "Read"
+    ],
+    "result_type": "success",
+    "is_error": true,
+    "result_error": "API Error: Request rejected (429) \u00b7 inference exceeds tpm/rpm limit",
+    "request_count": 23,
+    "status_counts": {
+      "200": 5,
+      "429": 18
+    },
+    "completed_model_responses": 2,
+    "http200_without_completion": 3
+  }
+]

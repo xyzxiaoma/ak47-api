@@ -341,7 +341,11 @@ func RecordSenseNovaRelayFailure(c *gin.Context, upstream *types.NewAPIError) *t
 		if reason == "" {
 			reason = "upstream_request_rejected"
 		}
-		return types.NewErrorWithStatusCode(errors.New("SenseNova: "+reason), types.ErrorCodeBadResponseStatusCode, upstream.StatusCode)
+		sanitized := types.NewErrorWithStatusCode(errors.New("SenseNova: "+reason), types.ErrorCodeBadResponseStatusCode, upstream.StatusCode)
+		if types.IsSkipRetryError(upstream) {
+			types.ErrOptionWithSkipRetry()(sanitized)
+		}
+		return sanitized
 	}
 	return upstream
 }

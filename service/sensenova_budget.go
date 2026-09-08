@@ -23,11 +23,13 @@ var (
 const senseNovaBudgetMaxExactTokens int64 = 1<<53 - 1
 
 type senseNovaBudgetPolicy struct {
-	TokensPerMinute int64
-	OutputAllowance int64
-	Interval        time.Duration
-	Window          time.Duration
-	Lease           time.Duration
+	TokensPerMinute  int64
+	OutputAllowance  int64
+	Interval         time.Duration
+	Window           time.Duration
+	Lease            time.Duration
+	Followups        int
+	FollowupInterval time.Duration
 }
 
 type senseNovaBudgetRequest struct {
@@ -35,15 +37,19 @@ type senseNovaBudgetRequest struct {
 	Fingerprint, Model, ID     string
 	PromptTokens, OutputTokens int64
 	HasOutputLimit             bool
+	Conversation               string
 }
 
 type senseNovaBudgetReservation struct {
-	keys     []string
-	id       string
-	owner    string
-	lease    time.Duration
-	window   time.Duration
-	estimate int64
+	keys         []string
+	id           string
+	owner        string
+	lease        time.Duration
+	window       time.Duration
+	estimate     int64
+	conversation string
+	followups    int
+	usedFollowup bool
 }
 
 // All scripts use Redis TIME, including expiry scores. Client clocks never
@@ -56,22 +62,38 @@ local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
 local id, candidate = ARGV[1], ARGV[2]
 local cap, estimate = tonumber(ARGV[3]), tonumber(ARGV[4])
 local window, interval, lease = tonumber(ARGV[5]), tonumber(ARGV[6]), tonumber(ARGV[7])
+local session, allowance, fast = ARGV[9], tonumber(ARGV[10]), tonumber(ARGV[11])
+local followup = cap == 0 and allowance > 0 and session ~= '' and
+  redis.call('HGET', KEYS[7], 'session') == session and
+  tonumber(redis.call('HGET', KEYS[7], 'remaining') or '0') > 0
+redis.call('ZREMRANGEBYSCORE', KEYS[8], '-inf', now - 60000)
 local expired = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', now)
 for _, member in ipairs(expired) do
   redis.call('ZREM', KEYS[1], member)
   redis.call('HDEL', KEYS[2], member)
   redis.call('HDEL', KEYS[3], member)
   redis.call('HDEL', KEYS[4], member)
+  redis.call('HDEL', KEYS[10], member)
+  redis.call('HDEL', KEYS[10], member .. ':pace', member .. ':pace-expiry')
 end
 local active = redis.call('GET', KEYS[5])
 if active and string.sub(active, 1, string.len(id) + 1) == id .. ':' then
-  if ARGV[8] == '0' then return {0, 0, '', 0} end
-  return {1, 0, active, 0}
+  if ARGV[8] == '0' then return {0, 0, '', 0, 0} end
+  return {1, 0, active, 0, redis.call('HGET', KEYS[10], id) == '1' and 1 or 0}
 end
 local wait, fixed = 0, 0
 if active then wait = math.max(1, redis.call('PTTL', KEYS[5])) end
-if cap == 0 and redis.call('EXISTS', KEYS[6]) == 1 then
+if cap == 0 and not followup and redis.call('EXISTS', KEYS[6]) == 1 then
   fixed = math.max(1, redis.call('PTTL', KEYS[6]))
+  wait = math.max(wait, fixed)
+end
+if cap == 0 and allowance > 0 then
+  local starts = redis.call('ZRANGE', KEYS[8], 0, -1, 'WITHSCORES')
+  if #starts >= (allowance + 1) * 2 then
+    local index = #starts - allowance * 2
+    fixed = math.max(fixed, tonumber(starts[index]) + 60000 - now)
+  end
+  if redis.call('EXISTS', KEYS[9]) == 1 then fixed = math.max(fixed, redis.call('PTTL', KEYS[9])) end
   wait = math.max(wait, fixed)
 end
 local existing = redis.call('ZSCORE', KEYS[1], id)
@@ -123,10 +145,10 @@ if active then
 else
   fixed = wait
 end
-if wait > 0 then return {0, wait, '', fixed} end
+if wait > 0 then return {0, wait, '', fixed, 0} end
 -- Pending health checks need the same bounds without temporarily owning or
 -- consuming capacity. Expired-entry cleanup above is safe for both modes.
-if ARGV[8] == '0' then return {0, 0, '', 0} end
+if ARGV[8] == '0' then return {0, 0, '', 0, 0} end
 local retention = window
 if cap == 0 then retention = math.max(window, interval) end
 redis.call('ZADD', KEYS[1], now + retention, id)
@@ -139,8 +161,23 @@ for i = 1, 4 do
   end
 end
 redis.call('SET', KEYS[5], candidate, 'PX', lease)
+if followup then
+  -- Preserve the prior dispatched start's deadline for owner-checked rollback
+  -- if billing/validation cancels this reservation before transport dispatch.
+  local previous = redis.call('GET', KEYS[6]) or ''
+  local remaining = math.max(0, redis.call('PTTL', KEYS[6]))
+  redis.call('HSET', KEYS[10], id .. ':pace', previous, id .. ':pace-expiry', now + remaining)
+end
 if cap == 0 then redis.call('SET', KEYS[6], candidate, 'PX', interval) end
-return {1, 0, candidate, 0}
+-- Every reserved start consumes local request demand; only explicitly unsent
+-- work can refund it. This rolling policy is not a provider RPM assertion.
+redis.call('ZADD', KEYS[8], now, id)
+redis.call('PEXPIRE', KEYS[8], 60000)
+redis.call('HSET', KEYS[10], id, followup and '1' or '0')
+redis.call('PEXPIRE', KEYS[10], math.max(retention, lease))
+if cap == 0 and allowance > 0 then redis.call('SET', KEYS[9], candidate, 'PX', fast) end
+if followup then redis.call('HINCRBY', KEYS[7], 'remaining', -1) end
+return {1, 0, candidate, 0, followup and 1 or 0}
 `)
 
 var senseNovaBudgetFinishScript = redis.NewScript(`
@@ -151,6 +188,24 @@ local actual, unused = tonumber(ARGV[3]), ARGV[4] == '1'
 local expiry = tonumber(redis.call('ZSCORE', KEYS[1], id) or '0')
 local matches = redis.call('HGET', KEYS[3], id) == owner
 local finished = redis.call('HEXISTS', KEYS[4], id) == 1
+local live = redis.call('GET', KEYS[5]) == owner
+local verified = live and not finished and not unused and ARGV[7] == '1'
+-- Completion grants require a live owner and explicit verified success.
+-- Successful followups do not replenish or extend their allowance/window.
+if live and not finished then
+  if unused then
+    redis.call('ZREM', KEYS[8], id)
+    if ARGV[10] == '1' and redis.call('HGET', KEYS[7], 'session') == ARGV[8] then
+      redis.call('HINCRBY', KEYS[7], 'remaining', 1)
+    end
+    if redis.call('GET', KEYS[9]) == owner then redis.call('DEL', KEYS[9]) end
+  elseif ARGV[7] ~= '1' then
+    redis.call('DEL', KEYS[7])
+  elseif tonumber(ARGV[9]) > 0 and ARGV[8] ~= '' and ARGV[10] ~= '1' and redis.call('EXISTS', KEYS[7]) == 0 then
+    redis.call('HSET', KEYS[7], 'session', ARGV[8], 'remaining', ARGV[9])
+    redis.call('PEXPIRE', KEYS[7], 60000)
+  end
+end
 -- A stream can outlive the rolling history while renewing its in-flight
 -- lease. Only that live owner may recreate its expired debit. Account a late
 -- success (or uncertain estimate) for a fresh window from completion; a stale
@@ -184,9 +239,25 @@ if redis.call('GET', KEYS[5]) == owner then redis.call('DEL', KEYS[5]) end
 -- A duplicate completion cannot relabel dispatched work as unused. Pacing may
 -- outlive history during policy changes, so also require ownership of pace.
 if unused and not finished and redis.call('GET', KEYS[6]) == owner then
-  redis.call('DEL', KEYS[6])
+  if ARGV[10] ~= '1' then
+    redis.call('DEL', KEYS[6])
+  elseif live then
+    local previous = redis.call('HGET', KEYS[10], id .. ':pace') or ''
+    local deadline = tonumber(redis.call('HGET', KEYS[10], id .. ':pace-expiry') or '0')
+    if previous ~= '' and deadline > now then
+      redis.call('SET', KEYS[6], previous, 'PX', deadline - now)
+    else
+      redis.call('DEL', KEYS[6])
+    end
+  end
 end
-return 1
+-- Unused rows leave the expiry index, so later pruning cannot discover their
+-- auxiliary fields. Clean after pace restoration, using the captured owner
+-- match even when an unsent lease expired before its longer-lived ledger row.
+if unused and not finished and (matches or live) then
+  redis.call('HDEL', KEYS[10], id, id .. ':pace', id .. ':pace-expiry')
+end
+return verified and 1 or 0
 `)
 
 var senseNovaBudgetRenewScript = redis.NewScript(`
@@ -221,6 +292,7 @@ func senseNovaBudgetAdmission(ctx context.Context, request senseNovaBudgetReques
 	if request.ChannelID <= 0 || request.Fingerprint == "" || request.Model == "" || request.ID == "" ||
 		request.PromptTokens < 0 || request.OutputTokens < 0 || policy.OutputAllowance < 0 ||
 		policy.TokensPerMinute < 0 || policy.TokensPerMinute > senseNovaBudgetMaxExactTokens ||
+		policy.Followups < 0 || policy.Followups > 2 || (policy.Followups > 0 && (policy.FollowupInterval < 5*time.Second || policy.FollowupInterval > time.Minute)) ||
 		policy.Window <= 0 || policy.Lease <= 0 || (policy.TokensPerMinute == 0 && policy.Interval <= 0) {
 		return nil, 0, 0, errors.New("invalid sensenova admission policy or request")
 	}
@@ -236,7 +308,7 @@ func senseNovaBudgetAdmission(ctx context.Context, request senseNovaBudgetReques
 		estimate = request.PromptTokens + output
 	}
 	base := senseNovaBudgetBaseKey(request)
-	keys := []string{base + "expiry", base + "debits", base + "owners", base + "finished", base + "lease", base + "pace"}
+	keys := []string{base + "expiry", base + "debits", base + "owners", base + "finished", base + "lease", base + "pace", base + "followup", base + "starts", base + "fastpace", base + "followup-owners"}
 	id := fmt.Sprintf("%x", sha256.Sum256([]byte(request.ID)))
 	owner, reserveValue := "", 0
 	if reserve {
@@ -247,24 +319,31 @@ func senseNovaBudgetAdmission(ctx context.Context, request senseNovaBudgetReques
 		owner, reserveValue = fmt.Sprintf("%s:%x", id, nonce), 1
 	}
 	result, err := senseNovaBudgetReserveScript.Run(ctx, common.RDB, keys, id, owner, policy.TokensPerMinute, estimate,
-		senseNovaBudgetMilliseconds(policy.Window), senseNovaBudgetMilliseconds(policy.Interval), senseNovaBudgetMilliseconds(policy.Lease), reserveValue).Slice()
+		senseNovaBudgetMilliseconds(policy.Window), senseNovaBudgetMilliseconds(policy.Interval), senseNovaBudgetMilliseconds(policy.Lease), reserveValue,
+		request.Conversation, policy.Followups, senseNovaBudgetMilliseconds(policy.FollowupInterval)).Slice()
 	if err != nil {
 		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
-	if len(result) != 4 {
+	if len(result) != 5 {
 		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
 	status, statusOK := result[0].(int64)
 	wait, waitOK := result[1].(int64)
 	storedOwner, ownerOK := result[2].(string)
 	fixed, fixedOK := result[3].(int64)
-	if !statusOK || !waitOK || !ownerOK || !fixedOK {
+	usedFollowup, followupOK := result[4].(int64)
+	if !statusOK || !waitOK || !ownerOK || !fixedOK || !followupOK {
 		return nil, 0, 0, errSenseNovaBudgetUnavailable
 	}
 	if status == 0 {
 		return nil, time.Duration(wait) * time.Millisecond, time.Duration(fixed) * time.Millisecond, nil
 	}
-	return &senseNovaBudgetReservation{keys: keys, id: id, owner: storedOwner, lease: policy.Lease, window: policy.Window, estimate: estimate}, 0, 0, nil
+	followups := policy.Followups
+	if policy.TokensPerMinute > 0 {
+		followups = 0
+	}
+	return &senseNovaBudgetReservation{keys: keys, id: id, owner: storedOwner, lease: policy.Lease, window: policy.Window, estimate: estimate,
+		conversation: request.Conversation, followups: followups, usedFollowup: usedFollowup == 1}, 0, 0, nil
 }
 
 func senseNovaBudgetBaseKey(request senseNovaBudgetRequest) string {
@@ -275,14 +354,25 @@ func senseNovaBudgetBaseKey(request senseNovaBudgetRequest) string {
 }
 
 func finishSenseNovaBudget(ctx context.Context, reservation *senseNovaBudgetReservation, actualTokens int64, unused bool) error {
+	return finishSenseNovaBudgetVerified(ctx, reservation, actualTokens, unused, false)
+}
+
+func finishSenseNovaBudgetVerified(ctx context.Context, reservation *senseNovaBudgetReservation, actualTokens int64, unused, verified bool) error {
+	_, err := finishSenseNovaBudgetOutcome(ctx, reservation, actualTokens, unused, verified)
+	return err
+}
+
+// The result authorizes publishing a conversation preference only after the
+// shared ledger accepted this live owner's verified completion exactly once.
+func finishSenseNovaBudgetOutcome(ctx context.Context, reservation *senseNovaBudgetReservation, actualTokens int64, unused, verified bool) (bool, error) {
 	if reservation == nil {
-		return nil
+		return false, nil
 	}
 	if common.RDB == nil {
-		return errSenseNovaBudgetUnavailable
+		return false, errSenseNovaBudgetUnavailable
 	}
 	if actualTokens < -1 {
-		return errors.New("invalid sensenova actual token usage")
+		return false, errors.New("invalid sensenova actual token usage")
 	}
 	if actualTokens > senseNovaBudgetMaxExactTokens {
 		actualTokens = senseNovaBudgetMaxExactTokens
@@ -291,11 +381,19 @@ func finishSenseNovaBudget(ctx context.Context, reservation *senseNovaBudgetRese
 	if unused {
 		unusedValue = 1
 	}
-	if _, err := senseNovaBudgetFinishScript.Run(ctx, common.RDB, reservation.keys, reservation.id, reservation.owner, actualTokens, unusedValue,
-		senseNovaBudgetMilliseconds(reservation.window), reservation.estimate).Result(); err != nil {
-		return errSenseNovaBudgetUnavailable
+	verifiedValue, followupValue := 0, 0
+	if verified {
+		verifiedValue = 1
 	}
-	return nil
+	if reservation.usedFollowup {
+		followupValue = 1
+	}
+	result, err := senseNovaBudgetFinishScript.Run(ctx, common.RDB, reservation.keys, reservation.id, reservation.owner, actualTokens, unusedValue,
+		senseNovaBudgetMilliseconds(reservation.window), reservation.estimate, verifiedValue, reservation.conversation, reservation.followups, followupValue).Int()
+	if err != nil {
+		return false, errSenseNovaBudgetUnavailable
+	}
+	return result == 1, nil
 }
 
 func renewSenseNovaBudget(ctx context.Context, reservation *senseNovaBudgetReservation) error {

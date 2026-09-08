@@ -1,0 +1,46 @@
+[
+  {
+    "id": "deepseek-v4-pro",
+    "hugging_face_id": "",
+    "name": "deepseek-v4-pro",
+    "created": 1777392000,
+    "input_modalities": [
+      "text"
+    ],
+    "output_modalities": [
+      "text"
+    ],
+    "quantization": "fp8",
+    "context_length": 1048576,
+    "max_output_length": 65536,
+    "pricing": {
+      "prompt": "0",
+      "completion": "0",
+      "image": "0",
+      "request": "0",
+      "input_cache_read": "0"
+    },
+    "supported_sampling_parameters": [
+      "temperature",
+      "stop"
+    ],
+    "supported_features": [
+      "tools",
+      "json_mode",
+      "reasoning"
+    ],
+    "description": "DeepSeek V4 PRO is a high-performance conversational model by DeepSeek, supporting thinking/non-thinking modes, 1M context window, and tool calling.",
+    "openrouter": {
+      "slug": "sensenova/deepseek-v4-pro"
+    },
+    "datacenters": [
+      {
+        "country_code": "CN"
+      }
+    ],
+    "businesses": [
+      "tokenplan",
+      "metered"
+    ]
+  }
+]

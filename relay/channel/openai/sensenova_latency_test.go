@@ -34,9 +34,7 @@ func TestSenseNovaLatencyChatAndClaudeStreamError(t *testing.T) {
 				service.MarkSenseNovaLatencyDispatch(c)()
 				resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 				_, apiErr := adaptor.DoResponse(c, resp, info)
-				// These legacy paths return nil. Telemetry must detect the upstream
-				// error without changing that relay/billing contract in this task.
-				require.Nil(t, apiErr)
+				require.NotNil(t, apiErr)
 				entry := service.SenseNovaLatencyLogInfo(c)
 				require.NotNil(t, entry)
 				require.Len(t, entry.Attempts, 1)

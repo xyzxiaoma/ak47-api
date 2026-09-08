@@ -102,6 +102,9 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 }
 
 func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	if service.IsSenseNovaAttempt(c) && (info.RelayFormat == types.RelayFormatOpenAI || info.RelayFormat == types.RelayFormatClaude) {
+		return SenseNovaChatStreamHandler(c, info, resp)
+	}
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
@@ -257,8 +260,33 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
 
-	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
-		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+	senseNova := service.IsSenseNovaAttempt(c)
+	if oaiError := simpleResponse.GetOpenAIError(); oaiError != nil && (oaiError.Type != "" || senseNova) {
+		status := resp.StatusCode
+		if senseNova && status == http.StatusOK {
+			status = http.StatusBadGateway
+		}
+		return nil, types.WithOpenAIError(*oaiError, status)
+	}
+	if senseNova {
+		if len(simpleResponse.Choices) == 0 {
+			return nil, types.NewOpenAIError(fmt.Errorf("empty SenseNova completion"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+		}
+		for _, choice := range simpleResponse.Choices {
+			var calls []dto.ToolCallRequest
+			if len(choice.Message.ToolCalls) > 0 && common.Unmarshal(choice.Message.ToolCalls, &calls) != nil {
+				return nil, types.NewOpenAIError(fmt.Errorf("invalid SenseNova tools"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			}
+			toolDeltas := make([]dto.ToolCallResponse, 0, len(calls))
+			for _, call := range calls {
+				toolDeltas = append(toolDeltas, dto.ToolCallResponse{ID: call.ID, Type: call.Type, Function: dto.FunctionResponse{Name: call.Function.Name, Arguments: call.Function.Arguments}})
+			}
+			tools := make(senseNovaStreamTools)
+			hasOutput := choice.Message.StringContent() != "" || choice.Message.GetReasoningContent() != "" || len(calls) > 0
+			if !validSenseNovaCompletion(choice.FinishReason, hasOutput) || !tools.observe(0, toolDeltas) || !tools.validFinish(0, choice.FinishReason) {
+				return nil, types.NewOpenAIError(fmt.Errorf("invalid SenseNova completion"), types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+			}
+		}
 	}
 	service.ObserveSenseNovaCompletionLatency(c, &simpleResponse)
 

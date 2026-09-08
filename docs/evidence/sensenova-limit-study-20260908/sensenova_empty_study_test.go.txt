@@ -1,0 +1,28 @@
+package openai
+
+import (
+    "io"
+    "net/http"
+    "strings"
+    "testing"
+
+    relaycommon "github.com/QuantumNous/new-api/relay/common"
+    relayconstant "github.com/QuantumNous/new-api/relay/constant"
+    "github.com/QuantumNous/new-api/relaykit/types"
+    "github.com/stretchr/testify/require"
+)
+
+func TestSenseNovaStudyRejectsEmptyChatStream(t *testing.T) {
+    for _, format := range []types.RelayFormat{types.RelayFormatOpenAI, types.RelayFormatClaude} {
+        t.Run(string(format), func(t *testing.T) {
+            c, recorder, info, adaptor := senseNovaResponsesFixture(t, true)
+            info.RelayMode = relayconstant.RelayModeChatCompletions
+            info.RelayFormat = format
+            info.ClaudeConvertInfo = &relaycommon.ClaudeConvertInfo{LastMessagesType: relaycommon.LastMessageTypeNone}
+            resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(""))}
+            usage, apiErr := adaptor.DoResponse(c, resp, info)
+            t.Logf("empty upstream: returned usage=%+v error=%v client body=%q", usage, apiErr, recorder.Body.String())
+            require.NotNil(t, apiErr, "an empty upstream stream must not be accepted as success")
+        })
+    }
+}

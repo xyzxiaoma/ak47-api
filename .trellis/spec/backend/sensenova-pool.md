@@ -192,8 +192,11 @@ real request to reset rate state, then release only its owned generations.
   item start; do not emit `summary_text` as reasoning `content`.
 - Hosted web search is unsupported and must return an explicit client error.
   Configure Codex `web_search = "disabled"`; do not silently drop its tools.
-- Treat exact string or numeric provider code `429001` as TPM exhaustion.
-  Unknown codes remain unknown; never classify by a broad numeric prefix.
+- Code `429001` alone or with mixed TPM/RPM text is `rate_limit`, not TPM.
+  Only the observed exact normalized tuple `429001` / `invalid_request_error` /
+  `inference tpm exhausted` and the named TPM code establish `tpm`. Code `8` /
+  `quota_exceeded_error` / `rpm exhausted` establishes `rpm`. Unknown codes remain
+  unknown; never classify by a broad numeric prefix or a message substring.
 - Admission defaults to `deepseek-v4-pro` only. Redis state is scoped by
   channel, key fingerprint and model, separate from health/probe state. Use
   Redis time and atomic reservations, an owner-checked renewable in-flight
@@ -257,6 +260,53 @@ real request to reset rate state, then release only its owned generations.
 - Cover fourth-key recovery success, added-key fairness, expiring observations,
   long fixed waits, combined health/shape penalties, canceled/unsent work, stale
   owners and pool lease contention in the capacity routing/store regressions.
+
+### Completion integrity and optional conversation scheduling (2026-09-08)
+
+- SenseNova Chat/Claude streams validate JSON, choice finish semantics and exact
+  `[DONE]` before emitting terminal success. Empty, role-only, truncated and
+  embedded-error streams return an error. Assembled function calls require IDs,
+  names and JSON object arguments before a tool-call completion is accepted.
+  Length/content-filter terminal responses retain their explicit stop semantics.
+- Hold role-only prefixes and disable heartbeat commitment on this guarded path.
+  Deliver text/reasoning/tool deltas in order; buffer only terminal markers.
+  Split mixed-choice or combined delta/finish chunks so text cannot reorder.
+  Initialize Claude message metadata before parallel first-chunk tool deltas;
+  split combined reasoning/text/tools deltas before Claude conversion so its
+  mutually exclusive branches cannot silently discard content;
+  attach final usage to its finish chunk so exactly one message_stop is emitted.
+- An unwritten failure restores JSON error headers and may retry a distinct key
+  under existing attempt/deadline limits. After any output is committed, emit a
+  sanitized protocol error, preserve skip-retry through error sanitization, and
+  never replay a partial tool call. Nonstream Chat also rejects empty, malformed
+  and code-only error completions before writing or charging.
+- Return nonnil partial usage only after semantic output was delivered.
+  `PostSenseNovaPartialConsumeQuota` settles that work with existing prices and
+  marks its consume log `incomplete=true`; it does not emit success metrics or
+  successful cache-affinity observations. BillingSession settlement makes the
+  controller's later Refund a no-op. Empty failures retain the full refund path.
+  Neither partial settlement nor a non-200/error response marks pool success.
+- Capacity shape evidence uses a `v2` namespace. Legacy false TPM/success evidence
+  is ignored and expires naturally. Budget, health and recovery lease identities
+  remain unchanged, so rollout cannot clear a live debit or provider cooldown.
+- Optional `SENSENOVA_CONVERSATION_AFFINITY_ENABLED` defaults false. An explicit
+  `X-AK47-Conversation-ID` hint (1–128 characters `[A-Za-z0-9_.-]`) is scoped by
+  authenticated user/token, channel and exact model. Store only hashes and key
+  fingerprints, max 128 sessions per scope, TTL 15 minutes. No prompt/metadata
+  heuristic or raw customer content is stored. Healthy preferred keys escape
+  normally when busy, cooling, disabled or removed.
+- `SENSENOVA_CANARY_FOLLOWUPS` defaults 0, range 0–2, and requires affinity.
+  `SENSENOVA_CANARY_FOLLOWUP_INTERVAL_SECONDS` defaults 5, range 5–60. Unknown
+  budgets retain one in-flight request and at most 1+allowance starts in a rolling
+  minute. These are operator canary policies, not measured provider quotas.
+  Only a live owning verified completion grants same-conversation follow-ups;
+  grants expire without refreshing their window, and failures withdraw them.
+  All dispatched attempts retain request demand; unsent cleanup restores the
+  previous pacing owner and absolute deadline without extending cooldown.
+- No trusted account mapping is available: budgets remain per credential. Do not
+  imply keys from one account supply independent quotas, or promise a key count
+  from opaque Token Plan limits. No numeric TPM, payload or pricing change is
+  hidden in these options. Stock clients need the explicit header to opt in.
 
 ### Request latency diagnostics
 

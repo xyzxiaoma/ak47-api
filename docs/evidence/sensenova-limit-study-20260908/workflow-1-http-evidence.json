@@ -1,0 +1,139 @@
+[
+  {
+    "started_at": "2026-09-08T07:03:07.785076+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 109371,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": true,
+    "output_types": [],
+    "tool_names": [],
+    "status": 200,
+    "retry_after": null,
+    "elapsed_s": 0.63
+  },
+  {
+    "started_at": "2026-09-08T07:03:08.468590+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 109372,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": false,
+    "output_types": [],
+    "tool_names": [],
+    "status": 429,
+    "retry_after": null,
+    "error": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"inference exceeds tpm/rpm limit\"}}",
+    "elapsed_s": 18.08
+  },
+  {
+    "started_at": "2026-09-08T07:03:27.164400+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 109372,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": false,
+    "output_types": [],
+    "tool_names": [],
+    "status": 429,
+    "retry_after": null,
+    "error": "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"inference exceeds tpm/rpm limit\"}}",
+    "elapsed_s": 2.25
+  },
+  {
+    "started_at": "2026-09-08T07:03:30.552755+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 109372,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": false,
+    "output_types": [],
+    "tool_names": [],
+    "status": 200,
+    "retry_after": null,
+    "usage": {
+      "input_tokens": 27231,
+      "output_tokens": 221
+    },
+    "elapsed_s": 6.23
+  },
+  {
+    "started_at": "2026-09-08T07:03:36.881342+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 110502,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": true,
+    "output_types": [
+      "tool_use"
+    ],
+    "tool_names": [
+      "Read"
+    ],
+    "status": 200,
+    "retry_after": null,
+    "start_usage": {
+      "cache_read_input_tokens": 27136,
+      "input_tokens": 391,
+      "output_tokens": 16
+    },
+    "first_semantic_s": 3.893,
+    "stop_reason": "tool_use",
+    "end_usage": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 27136,
+      "input_tokens": 391,
+      "output_tokens": 72
+    },
+    "completed": true,
+    "elapsed_s": 4.41
+  },
+  {
+    "started_at": "2026-09-08T07:03:41.340600+00:00",
+    "path": "/v1/messages?beta=true",
+    "method": "POST",
+    "model": "deepseek-v4-pro",
+    "bytes": 110933,
+    "tools": 25,
+    "max_tokens": 32000,
+    "thinking_type": "adaptive",
+    "stream": true,
+    "output_types": [
+      "text"
+    ],
+    "tool_names": [],
+    "status": 200,
+    "retry_after": null,
+    "start_usage": {
+      "cache_read_input_tokens": 27392,
+      "input_tokens": 246,
+      "output_tokens": 2
+    },
+    "first_semantic_s": 4.325,
+    "first_answer_s": 4.325,
+    "stop_reason": "end_turn",
+    "end_usage": {
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 27392,
+      "input_tokens": 246,
+      "output_tokens": 10
+    },
+    "completed": true,
+    "elapsed_s": 4.49
+  }
+]

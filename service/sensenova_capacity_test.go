@@ -320,3 +320,41 @@ func TestSenseNovaCapacityStoreUnavailableIsSanitized(t *testing.T) {
 		assert.ErrorIs(t, releaseSenseNovaCapacityRecovery(context.Background(), 15, request.Model, "owner"), errSenseNovaBudgetUnavailable)
 	}
 }
+
+func TestSenseNovaCapacityStoreIgnoresLegacyEvidenceWithoutReleasingOwners(t *testing.T) {
+	for _, verified := range []bool{false, true} {
+		t.Run(fmt.Sprint(verified), func(t *testing.T) {
+			server, _ := setupSenseNovaBudgetRedis(t)
+			ctx := context.Background()
+			request := senseNovaCapacityTestRequest()
+			owner := senseNovaCapacityTestReserve(t, request)
+			claimed, _, err := claimSenseNovaCapacityRecovery(ctx, request.ChannelID, request.Model, owner.owner, time.Minute)
+			require.NoError(t, err)
+			require.True(t, claimed)
+			now, err := common.RDB.Time(ctx).Result()
+			require.NoError(t, err)
+			legacy := senseNovaBudgetBaseKey(request) + "capacity:i32768:o32768"
+			verifiedValue, failures := 0, 3
+			if verified {
+				verifiedValue, failures = 1, 0
+			}
+			require.NoError(t, common.RDB.HSet(ctx, legacy, "verified", verifiedValue, "failures", failures, "retry", now.Add(4*time.Minute).UnixMilli(), "expires", now.Add(15*time.Minute).UnixMilli()).Err())
+			require.NoError(t, common.RDB.Expire(ctx, legacy, 15*time.Minute).Err())
+			observations, err := readSenseNovaCapacity(ctx, []senseNovaBudgetRequest{request})
+			require.NoError(t, err)
+			assert.Equal(t, []senseNovaCapacityObservation{{}}, observations, "older false TPM/success evidence cannot affect current selection")
+			require.NoError(t, recordSenseNovaCapacity(ctx, owner, request, false, true, 0))
+			observations, err = readSenseNovaCapacity(ctx, []senseNovaBudgetRequest{request})
+			require.NoError(t, err)
+			assert.Equal(t, []senseNovaCapacityObservation{{Failures: 1, RetryAfter: time.Minute}}, observations, "new explicit evidence starts a fresh history")
+			assert.Equal(t, 15*time.Minute, server.TTL(legacy), "legacy evidence expires naturally, without touching live keys")
+			require.NoError(t, renewSenseNovaBudget(ctx, owner))
+			blocked, _, err := reserveSenseNovaBudget(ctx, senseNovaBudgetRequest{ChannelID: request.ChannelID, Fingerprint: request.Fingerprint, Model: request.Model, ID: "another-owner", HasOutputLimit: true}, senseNovaBudgetPolicy{Window: time.Minute, Interval: time.Minute, Lease: time.Minute})
+			require.NoError(t, err)
+			assert.Nil(t, blocked, "evidence migration must not release active budget ownership or pacing")
+			claimed, _, err = claimSenseNovaCapacityRecovery(ctx, request.ChannelID, request.Model, "another-owner", time.Minute)
+			require.NoError(t, err)
+			assert.False(t, claimed, "evidence migration must not release the pool recovery owner")
+		})
+	}
+}

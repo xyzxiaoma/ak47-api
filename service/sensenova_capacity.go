@@ -18,6 +18,9 @@ type senseNovaCapacityObservation struct {
 
 // Size classes describe observed workloads, never provider quotas. Unsigned
 // buckets allow the upper bucket (2^63) to represent every valid int64 input.
+// v2 ignores pre-completion-validation success and misclassified 429001 TPM
+// evidence. Old hashes expire naturally; budget, health and recovery ownership
+// retain their existing identities throughout a rolling deployment.
 func senseNovaCapacityShape(request senseNovaBudgetRequest) string {
 	input := uint64(8192)
 	for request.PromptTokens > 0 && input < uint64(request.PromptTokens) {
@@ -35,7 +38,7 @@ func senseNovaCapacityShape(request senseNovaBudgetRequest) string {
 			output = fmt.Sprint(bucket)
 		}
 	}
-	return fmt.Sprintf("i%d:o%s", input, output)
+	return fmt.Sprintf("v2:i%d:o%s", input, output)
 }
 
 const senseNovaCapacityReadLua = `

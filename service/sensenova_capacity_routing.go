@@ -70,6 +70,24 @@ func senseNovaCapacityCandidates(c *gin.Context, channel *model.Channel, request
 			candidate.rank = 0
 		}
 	}
-	sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].rank < candidates[j].rank })
+	preferred := ""
+	if request.Conversation != "" {
+		scope, session := senseNovaConversationIdentity(c, request.ChannelID, request.Model)
+		preferred, err = senseNovaConversationPreference(c.Request.Context(), scope, session, "")
+		if err != nil {
+			return nil, err
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		// Affinity never promotes recovering capacity over healthy capacity.
+		left, right := candidates[i], candidates[j]
+		if left.rank == 2 || right.rank == 2 {
+			return left.rank < right.rank
+		}
+		if (left.request.Fingerprint == preferred) != (right.request.Fingerprint == preferred) {
+			return left.request.Fingerprint == preferred
+		}
+		return left.rank < right.rank
+	})
 	return candidates, nil
 }
